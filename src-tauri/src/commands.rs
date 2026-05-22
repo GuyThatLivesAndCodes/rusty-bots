@@ -54,6 +54,12 @@ pub fn save_bot(state: State<'_, AppState>, input: UpsertBotInput) -> Result<Bot
         history_size: input.history_size.unwrap_or_else(|| existing.as_ref().map(|e| e.history_size).unwrap_or(10)),
     };
     state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    // Sync config to running bot if it's online
+    if let Some(rb) = state.registry.running.lock().get(&cfg.id) {
+        *rb.config.lock() = cfg.clone();
+    }
+
     Ok(cfg)
 }
 

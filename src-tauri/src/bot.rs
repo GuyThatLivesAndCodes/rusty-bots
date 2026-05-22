@@ -18,6 +18,7 @@ pub struct BotRuntimeState {
 }
 
 pub struct RunningBot {
+    pub config: Arc<Mutex<BotConfig>>,
     pub shard_manager: Arc<ShardManager>,
     pub shutdown_tx: Option<oneshot::Sender<()>>,
     pub http: Arc<Http>,
@@ -212,8 +213,9 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILD_MEMBERS;
 
+    let config_arc = Arc::new(Mutex::new(cfg.clone()));
     let runtime_state = BotRuntimeState {
-        config: Arc::new(Mutex::new(cfg.clone())),
+        config: config_arc.clone(),
         app: app.clone(),
     };
 
@@ -227,6 +229,7 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
     let (tx, _rx) = oneshot::channel::<()>();
 
     registry.running.lock().insert(cfg.id.clone(), RunningBot {
+        config: config_arc,
         shard_manager,
         shutdown_tx: Some(tx),
         http,
