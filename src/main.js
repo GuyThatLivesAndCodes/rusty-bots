@@ -4,7 +4,8 @@ const { listen } = window.__TAURI__.event;
 const state = {
   bots: [],
   selected: null,
-  view: "empty", // empty | editor | dashboard
+  view: "empty",
+  currentTab: "dashboard-tab",
   currentGuild: null,
   guildRoles: [],
   selectedMember: null,
@@ -99,11 +100,63 @@ async function openDashboard(b) {
   $("dash-name").textContent = b.name;
   $("dash-status").className = "status " + (b.running ? "online" : "offline");
   $("dash-status").textContent = b.running ? "online" : "offline";
+  state.currentTab = "dashboard-tab";
+  switchTab("dashboard-tab");
+  updateDashboardStats(b);
   $("guild-list").innerHTML = "";
   $("member-list").innerHTML = "";
   $("console-log").textContent = (state.logs[b.id] || []).join("\n");
+  loadAISettings(b);
   showView("dashboard");
   if (b.running) await loadGuilds();
+}
+
+function updateDashboardStats(b) {
+  $("ds-status").textContent = b.running ? "Online" : "Offline";
+  $("ds-ai").textContent = b.ai_enabled ? "Yes" : "No";
+  $("ds-model").textContent = b.model || "—";
+  if (b.running) {
+    loadGuilds().then(() => {
+      const guildCount = $("guild-list").children.length;
+      $("ds-guilds").textContent = guildCount;
+    });
+  } else {
+    $("ds-guilds").textContent = "—";
+  }
+}
+
+function loadAISettings(b) {
+  $("ai-xai").value = b.xai_api_key || "";
+  const wantModel = b.model || "grok-4.3";
+  if (![...$("ai-model").options].some((o) => o.value === wantModel)) {
+    const opt = document.createElement("option");
+    opt.value = wantModel; opt.textContent = wantModel;
+    $("ai-model").appendChild(opt);
+  }
+  $("ai-model").value = wantModel;
+  $("ai-history").value = b.history_size || 10;
+  $("ai-enabled").checked = b.ai_enabled ?? true;
+  $("ai-persona").value = b.persona || "";
+}
+
+async function saveAISettings() {
+  if (!state.selected) return;
+  const b = state.bots.find((x) => x.id === state.selected);
+  if (!b) return;
+  const input = {
+    id: state.selected,
+    name: b.name,
+    token: b.token,
+    xai_api_key: $("ai-xai").value.trim(),
+    model: $("ai-model").value.trim(),
+    persona: $("ai-persona").value,
+    ai_enabled: $("ai-enabled").checked,
+    history_size: parseInt($("ai-history").value, 10) || 10,
+  };
+  await invoke("save_bot", { input });
+  await refreshBots();
+  const updated = state.bots.find((x) => x.id === state.selected);
+  if (updated) updateDashboardStats(updated);
 }
 
 async function loadGuilds() {
@@ -127,6 +180,7 @@ async function selectGuild(g, target) {
   if (target) target.classList.add("active");
   await refreshMembers();
   state.guildRoles = await invoke("list_guild_roles", { id: state.selected, guildId: g.id });
+  switchTab("members-tab");
 }
 
 async function refreshMembers() {
@@ -195,9 +249,21 @@ function appendLog(botId, level, msg) {
   const line = `[${new Date().toLocaleTimeString()}] [${level}] ${msg}`;
   state.logs[botId].push(line);
   if (state.logs[botId].length > 500) state.logs[botId].shift();
-  if (state.selected === botId && state.view === "dashboard") {
+  if (state.selected === botId && state.view === "dashboard" && state.currentTab === "console-tab") {
     $("console-log").textContent = state.logs[botId].join("\n");
     $("console-log").scrollTop = $("console-log").scrollHeight;
+  }
+}
+
+function switchTab(tabId) {
+  state.currentTab = tabId;
+  document.querySelectorAll(".tab-content").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+  const content = $(tabId);
+  if (content) content.classList.add("active");
+  document.querySelector(`[data-tab="${tabId}"]`)?.classList.add("active");
+  if (tabId === "console-tab" && state.selected) {
+    $("console-log").textContent = (state.logs[state.selected] || []).join("\n");
   }
 }
 
@@ -215,6 +281,10 @@ $("edit-btn").onclick = () => { const b = state.bots.find(x => x.id === state.se
 $("refresh-members").onclick = refreshMembers;
 $("member-search").oninput = refreshMembers;
 $("mm-close").onclick = () => $("member-modal").classList.add("hidden");
+$("ai-save-btn").onclick = saveAISettings;
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.onclick = () => switchTab(btn.dataset.tab);
+});
 document.querySelectorAll("#member-modal [data-act]").forEach((b) => b.onclick = () => memberAction(b.dataset.act));
 
 listen("bot-log", (ev) => {

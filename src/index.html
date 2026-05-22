@@ -48,23 +48,72 @@
         <button id="edit-btn">Edit</button>
       </header>
 
-      <div class="dash-grid">
-        <div class="panel">
-          <h3>Servers</h3>
-          <ul id="guild-list"></ul>
-        </div>
-        <div class="panel">
-          <h3 id="members-title">Members</h3>
-          <div class="row">
-            <input id="member-search" placeholder="Filter…" />
-            <button id="refresh-members">Refresh</button>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="dashboard-tab">Dashboard</button>
+        <button class="tab-btn" data-tab="servers-tab">Servers</button>
+        <button class="tab-btn" data-tab="members-tab">Members</button>
+        <button class="tab-btn" data-tab="ai-tab">AI Settings</button>
+        <button class="tab-btn" data-tab="console-tab">Console</button>
+      </nav>
+
+      <div id="dashboard-tab" class="tab-content active">
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="label">Status</span>
+            <span class="value" id="ds-status">Offline</span>
           </div>
-          <ul id="member-list"></ul>
+          <div class="stat">
+            <span class="label">Guilds</span>
+            <span class="value" id="ds-guilds">0</span>
+          </div>
+          <div class="stat">
+            <span class="label">AI Enabled</span>
+            <span class="value" id="ds-ai">No</span>
+          </div>
+          <div class="stat">
+            <span class="label">Model</span>
+            <span class="value" id="ds-model">—</span>
+          </div>
         </div>
-        <div class="panel">
-          <h3>Console</h3>
-          <pre id="console-log"></pre>
+      </div>
+
+      <div id="servers-tab" class="tab-content hidden">
+        <h3>Servers This Bot Is In</h3>
+        <ul id="guild-list"></ul>
+      </div>
+
+      <div id="members-tab" class="tab-content hidden">
+        <h3 id="members-title">Members</h3>
+        <div class="row">
+          <input id="member-search" placeholder="Filter…" />
+          <button id="refresh-members">Refresh</button>
         </div>
+        <ul id="member-list"></ul>
+      </div>
+
+      <div id="ai-tab" class="tab-content hidden">
+        <h3>AI Configuration</h3>
+        <label>xAI API Key <input id="ai-xai" type="password" /></label>
+        <label>Model
+          <select id="ai-model">
+            <option>grok-4.3</option>
+            <option>grok-4.20-reasoning</option>
+            <option>grok-4.20-non-reasoning</option>
+          </select>
+        </label>
+        <label>History size (messages) <input id="ai-history" type="number" min="1" max="50" /></label>
+        <label><input id="ai-enabled" type="checkbox" /> AI responses enabled</label>
+        <label>Persona / System Prompt
+          <textarea id="ai-persona" rows="10" placeholder="You are a Discord bot that..."></textarea>
+        </label>
+        <div class="row">
+          <button id="ai-save-btn">Save AI Settings</button>
+        </div>
+      </div>
+
+      <div id="console-tab" class="tab-content hidden">
+        <h3>Console Output</h3>
+        <pre id="console-log"></pre>
       </div>
     </section>
   </main>
