@@ -54,12 +54,13 @@ function openEditor(b) {
   $("f-name").value = b?.name || "";
   $("f-token").value = b?.token || "";
   $("f-xai").value = b?.xai_api_key || "";
-  $("f-model").value = b?.model || "grok-4.3";
-  if (![...$("f-model").options].some((o) => o.value === $("f-model").value)) {
+  const wantModel = b?.model || "grok-4.3";
+  if (![...$("f-model").options].some((o) => o.value === wantModel)) {
     const opt = document.createElement("option");
-    opt.value = b.model; opt.textContent = b.model;
-    $("f-model").appendChild(opt); $("f-model").value = b.model;
+    opt.value = wantModel; opt.textContent = wantModel;
+    $("f-model").appendChild(opt);
   }
+  $("f-model").value = wantModel;
   $("f-history").value = b?.history_size ?? 10;
   $("f-ai").checked = b?.ai_enabled ?? true;
   $("f-persona").value = b?.persona || "";
@@ -113,17 +114,17 @@ async function loadGuilds() {
     for (const g of guilds) {
       const li = document.createElement("li");
       li.textContent = `${g.name} (${g.member_count})`;
-      li.onclick = () => selectGuild(g);
+      li.onclick = (ev) => selectGuild(g, ev.currentTarget);
       ul.appendChild(li);
     }
   } catch (e) { appendLog(state.selected, "error", String(e)); }
 }
 
-async function selectGuild(g) {
+async function selectGuild(g, target) {
   state.currentGuild = g.id;
   $("members-title").textContent = `Members — ${g.name}`;
   for (const li of $("guild-list").children) li.classList.remove("active");
-  event.currentTarget.classList.add("active");
+  if (target) target.classList.add("active");
   await refreshMembers();
   state.guildRoles = await invoke("list_guild_roles", { id: state.selected, guildId: g.id });
 }
