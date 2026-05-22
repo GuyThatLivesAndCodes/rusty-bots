@@ -3,8 +3,8 @@ const { listen } = window.__TAURI__.event;
 
 const state = {
   bots: [],
-  selected: null,
-  view: "empty",
+  selected: null,           // bot id, or "__new__" for an unsaved new bot
+  view: "empty",            // empty | dashboard
   currentTab: "dashboard-tab",
   currentGuild: null,
   guildRoles: [],
@@ -14,9 +14,28 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+function emptyBot() {
+  return {
+    id: null,
+    name: "",
+    token: "",
+    xai_api_key: "",
+    model: "grok-4.3",
+    persona: "",
+    ai_enabled: true,
+    history_size: 10,
+    running: false,
+  };
+}
+
 async function refreshBots() {
   state.bots = await invoke("list_bots");
   renderBotList();
+}
+
+function currentBot() {
+  if (state.selected === "__new__") return state._draftNew || emptyBot();
+  return state.bots.find((b) => b.id === state.selected) || null;
 }
 
 function renderBotList() {
@@ -32,100 +51,61 @@ function renderBotList() {
     li.onclick = () => selectBot(b.id);
     ul.appendChild(li);
   }
+  if (state.selected === "__new__") {
+    const li = document.createElement("li");
+    li.textContent = "(new bot)";
+    li.classList.add("active");
+    ul.appendChild(li);
+  }
 }
 
 function showView(v) {
   state.view = v;
-  for (const id of ["empty", "editor", "dashboard"]) {
+  for (const id of ["empty", "dashboard"]) {
     $(id).classList.toggle("hidden", id !== v);
   }
 }
 
 function selectBot(id) {
   state.selected = id;
-  const b = state.bots.find((x) => x.id === id);
-  if (!b) return;
   renderBotList();
-  if (b.running) openDashboard(b);
-  else openEditor(b);
-}
-
-function openEditor(b) {
-  $("editor-title").textContent = b ? `Edit: ${b.name}` : "New Bot";
-  $("f-name").value = b?.name || "";
-  $("f-token").value = b?.token || "";
-  $("f-xai").value = b?.xai_api_key || "";
-  const wantModel = b?.model || "grok-4.3";
-  if (![...$("f-model").options].some((o) => o.value === wantModel)) {
-    const opt = document.createElement("option");
-    opt.value = wantModel; opt.textContent = wantModel;
-    $("f-model").appendChild(opt);
-  }
-  $("f-model").value = wantModel;
-  $("f-history").value = b?.history_size ?? 10;
-  $("f-ai").checked = b?.ai_enabled ?? true;
-  $("f-persona").value = b?.persona || "";
-  $("delete-btn").style.display = b ? "" : "none";
-  showView("editor");
-}
-
-async function saveBot() {
-  const input = {
-    id: state.selected || null,
-    name: $("f-name").value.trim(),
-    token: $("f-token").value.trim(),
-    xai_api_key: $("f-xai").value.trim(),
-    model: $("f-model").value.trim(),
-    persona: $("f-persona").value,
-    ai_enabled: $("f-ai").checked,
-    history_size: parseInt($("f-history").value, 10) || 10,
-  };
-  if (!input.name || !input.token) { alert("Name and token required"); return; }
-  const saved = await invoke("save_bot", { input });
-  state.selected = saved.id;
-  await refreshBots();
-  selectBot(saved.id);
-}
-
-async function deleteBot() {
-  if (!state.selected) return;
-  if (!confirm("Delete this bot?")) return;
-  await invoke("delete_bot", { id: state.selected });
-  state.selected = null;
-  await refreshBots();
-  showView("empty");
-}
-
-async function openDashboard(b) {
-  $("dash-name").textContent = b.name;
-  $("dash-status").className = "status " + (b.running ? "online" : "offline");
-  $("dash-status").textContent = b.running ? "online" : "offline";
-  state.currentTab = "dashboard-tab";
+  openDashboard();
   switchTab("dashboard-tab");
-  updateDashboardStats(b);
-  $("guild-list").innerHTML = "";
-  $("member-list").innerHTML = "";
-  $("console-log").textContent = (state.logs[b.id] || []).join("\n");
-  loadAISettings(b);
-  showView("dashboard");
-  if (b.running) await loadGuilds();
 }
 
-function updateDashboardStats(b) {
-  $("ds-status").textContent = b.running ? "Online" : "Offline";
+function newBot() {
+  state._draftNew = emptyBot();
+  state.selected = "__new__";
+  renderBotList();
+  openDashboard();
+  switchTab("settings-tab");
+}
+
+function openDashboard() {
+  const b = currentBot();
+  if (!b) { showView("empty"); return; }
+  $("dash-name").textContent = b.name || "(unnamed bot)";
+  const running = !!b.running;
+  $("dash-status").className = "status " + (running ? "online" : "offline");
+  $("dash-status").textContent = running ? "online" : "offline";
+
+  $("start-btn").disabled = state.selected === "__new__" || running;
+  $("stop-btn").disabled = !running;
+
+  // Dashboard stats
+  $("ds-status").textContent = running ? "Online" : "Offline";
   $("ds-ai").textContent = b.ai_enabled ? "Yes" : "No";
   $("ds-model").textContent = b.model || "—";
-  if (b.running) {
-    loadGuilds().then(() => {
-      const guildCount = $("guild-list").children.length;
-      $("ds-guilds").textContent = guildCount;
-    });
-  } else {
-    $("ds-guilds").textContent = "—";
-  }
-}
+  $("ds-guilds").textContent = "—";
+  $("ds-hint").textContent = state.selected === "__new__"
+    ? "Save the bot in the Settings tab first, then press Start."
+    : (running ? "" : "Bot is offline. Press Start to bring it online.");
 
-function loadAISettings(b) {
+  // Settings tab
+  $("f-name").value = b.name || "";
+  $("f-token").value = b.token || "";
+
+  // AI tab
   $("ai-xai").value = b.xai_api_key || "";
   const wantModel = b.model || "grok-4.3";
   if (![...$("ai-model").options].some((o) => o.value === wantModel)) {
@@ -137,11 +117,47 @@ function loadAISettings(b) {
   $("ai-history").value = b.history_size || 10;
   $("ai-enabled").checked = b.ai_enabled ?? true;
   $("ai-persona").value = b.persona || "";
+
+  // Reset transient lists
+  $("guild-list").innerHTML = "";
+  $("member-list").innerHTML = "";
+  $("console-log").textContent = (state.logs[b.id] || []).join("\n");
+
+  showView("dashboard");
+
+  if (running) {
+    loadGuilds().then(() => {
+      $("ds-guilds").textContent = $("guild-list").children.length;
+    });
+  }
+}
+
+async function saveSettings() {
+  const b = currentBot();
+  if (!b) return;
+  const name = $("f-name").value.trim();
+  const token = $("f-token").value.trim();
+  if (!name || !token) { alert("Name and token required."); return; }
+  const input = {
+    id: state.selected === "__new__" ? null : state.selected,
+    name,
+    token,
+    xai_api_key: b.xai_api_key || "",
+    model: b.model || "grok-4.3",
+    persona: b.persona || "",
+    ai_enabled: b.ai_enabled ?? true,
+    history_size: b.history_size || 10,
+  };
+  const saved = await invoke("save_bot", { input });
+  state.selected = saved.id;
+  state._draftNew = null;
+  await refreshBots();
+  openDashboard();
 }
 
 async function saveAISettings() {
-  if (!state.selected) return;
-  const b = state.bots.find((x) => x.id === state.selected);
+  if (state.selected === "__new__") { alert("Save the bot in Settings tab first."); return; }
+  const b = currentBot();
   if (!b) return;
   const input = {
     id: state.selected,
@@ -155,8 +171,24 @@ async function saveAISettings() {
   };
   await invoke("save_bot", { input });
   await refreshBots();
-  const updated = state.bots.find((x) => x.id === state.selected);
-  if (updated) updateDashboardStats(updated);
+  openDashboard();
+  switchTab("ai-tab");
+}
+
+async function deleteBot() {
+  if (state.selected === "__new__") {
+    state._draftNew = null;
+    state.selected = null;
+    renderBotList();
+    showView("empty");
+    return;
+  }
+  if (!state.selected) return;
+  if (!confirm("Delete this bot?")) return;
+  await invoke("delete_bot", { id: state.selected });
+  state.selected = null;
+  await refreshBots();
+  showView("empty");
 }
 
 async function loadGuilds() {
@@ -170,6 +202,7 @@ async function loadGuilds() {
       li.onclick = (ev) => selectGuild(g, ev.currentTarget);
       ul.appendChild(li);
     }
+    $("servers-hint").style.display = guilds.length ? "none" : "";
   } catch (e) { appendLog(state.selected, "error", String(e)); }
 }
 
@@ -178,6 +211,7 @@ async function selectGuild(g, target) {
   $("members-title").textContent = `Members — ${g.name}`;
   for (const li of $("guild-list").children) li.classList.remove("active");
   if (target) target.classList.add("active");
+  $("members-hint").style.display = "none";
   await refreshMembers();
   state.guildRoles = await invoke("list_guild_roles", { id: state.selected, guildId: g.id });
   switchTab("members-tab");
@@ -249,7 +283,7 @@ function appendLog(botId, level, msg) {
   const line = `[${new Date().toLocaleTimeString()}] [${level}] ${msg}`;
   state.logs[botId].push(line);
   if (state.logs[botId].length > 500) state.logs[botId].shift();
-  if (state.selected === botId && state.view === "dashboard" && state.currentTab === "console-tab") {
+  if (state.selected === botId && state.view === "dashboard") {
     $("console-log").textContent = state.logs[botId].join("\n");
     $("console-log").scrollTop = $("console-log").scrollHeight;
   }
@@ -257,10 +291,10 @@ function appendLog(botId, level, msg) {
 
 function switchTab(tabId) {
   state.currentTab = tabId;
-  document.querySelectorAll(".tab-content").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach((t) => { t.classList.remove("active"); t.classList.add("hidden"); });
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
   const content = $(tabId);
-  if (content) content.classList.add("active");
+  if (content) { content.classList.add("active"); content.classList.remove("hidden"); }
   document.querySelector(`[data-tab="${tabId}"]`)?.classList.add("active");
   if (tabId === "console-tab" && state.selected) {
     $("console-log").textContent = (state.logs[state.selected] || []).join("\n");
@@ -268,16 +302,16 @@ function switchTab(tabId) {
 }
 
 // Event wiring
-$("new-bot-btn").onclick = () => { state.selected = null; renderBotList(); openEditor(null); };
-$("save-btn").onclick = saveBot;
+$("new-bot-btn").onclick = newBot;
+$("save-btn").onclick = saveSettings;
 $("delete-btn").onclick = deleteBot;
 $("start-btn").onclick = async () => {
-  try { await invoke("start_bot_cmd", { id: state.selected }); await refreshBots(); const b = state.bots.find(x => x.id === state.selected); openDashboard(b); } catch (e) { alert(e); }
+  if (state.selected === "__new__") { alert("Save the bot first."); return; }
+  try { await invoke("start_bot_cmd", { id: state.selected }); await refreshBots(); openDashboard(); } catch (e) { alert(e); }
 };
 $("stop-btn").onclick = async () => {
-  try { await invoke("stop_bot_cmd", { id: state.selected }); await refreshBots(); const b = state.bots.find(x => x.id === state.selected); openDashboard(b); } catch (e) { alert(e); }
+  try { await invoke("stop_bot_cmd", { id: state.selected }); await refreshBots(); openDashboard(); } catch (e) { alert(e); }
 };
-$("edit-btn").onclick = () => { const b = state.bots.find(x => x.id === state.selected); openEditor(b); };
 $("refresh-members").onclick = refreshMembers;
 $("member-search").oninput = refreshMembers;
 $("mm-close").onclick = () => $("member-modal").classList.add("hidden");
@@ -293,10 +327,7 @@ listen("bot-log", (ev) => {
 });
 listen("bot-status", async (ev) => {
   await refreshBots();
-  if (state.selected === ev.payload.bot_id && state.view === "dashboard") {
-    const b = state.bots.find(x => x.id === ev.payload.bot_id);
-    if (b) openDashboard(b);
-  }
+  if (state.selected === ev.payload.bot_id) openDashboard();
 });
 
 refreshBots();
