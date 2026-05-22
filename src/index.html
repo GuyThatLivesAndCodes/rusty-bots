@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rusty Bots</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>Rusty Bots</h1>
+    <button id="new-bot-btn">+ New Bot</button>
+    <ul id="bot-list"></ul>
+  </aside>
+  <main id="main">
+    <section id="empty" class="view">
+      <p>Select or create a bot.</p>
+    </section>
+
+    <section id="editor" class="view hidden">
+      <h2 id="editor-title">New Bot</h2>
+      <label>Name <input id="f-name" /></label>
+      <label>Discord Bot Token <input id="f-token" type="password" /></label>
+      <label>xAI API Key <input id="f-xai" type="password" /></label>
+      <label>Model
+        <select id="f-model">
+          <option>grok-4.3</option>
+          <option>grok-4.20-reasoning</option>
+          <option>grok-4.20-non-reasoning</option>
+        </select>
+      </label>
+      <label>History size <input id="f-history" type="number" value="10" min="1" max="50" /></label>
+      <label><input id="f-ai" type="checkbox" checked /> AI responses enabled</label>
+      <label>Persona / System Prompt
+        <textarea id="f-persona" rows="8" placeholder="You are..."></textarea>
+      </label>
+      <div class="row">
+        <button id="save-btn">Save</button>
+        <button id="delete-btn" class="danger">Delete</button>
+      </div>
+    </section>
+
+    <section id="dashboard" class="view hidden">
+      <header class="dash-head">
+        <h2 id="dash-name"></h2>
+        <span id="dash-status" class="status offline">offline</span>
+        <button id="start-btn">Start</button>
+        <button id="stop-btn">Stop</button>
+        <button id="edit-btn">Edit</button>
+      </header>
+
+      <div class="dash-grid">
+        <div class="panel">
+          <h3>Servers</h3>
+          <ul id="guild-list"></ul>
+        </div>
+        <div class="panel">
+          <h3 id="members-title">Members</h3>
+          <div class="row">
+            <input id="member-search" placeholder="Filter…" />
+            <button id="refresh-members">Refresh</button>
+          </div>
+          <ul id="member-list"></ul>
+        </div>
+        <div class="panel">
+          <h3>Console</h3>
+          <pre id="console-log"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="member-modal" class="modal hidden">
+    <div class="modal-body">
+      <h3 id="member-modal-title"></h3>
+      <p>User ID: <code id="mm-user-id"></code></p>
+      <div class="row">
+        <button data-act="kick">Kick</button>
+        <button data-act="ban" class="danger">Ban</button>
+        <label>Timeout (s) <input id="mm-timeout" type="number" value="300" /></label>
+        <button data-act="timeout">Timeout</button>
+      </div>
+      <h4>Roles</h4>
+      <div id="mm-roles"></div>
+      <button id="mm-close">Close</button>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
