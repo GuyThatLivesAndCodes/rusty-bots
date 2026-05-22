@@ -53,17 +53,24 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0" --locked
 
+      - name: Regenerate icons from source PNG
+        working-directory: src-tauri
+        run: cargo tauri icon icons/icon.png
+
       - name: Build app
         working-directory: src-tauri
-        run: cargo tauri build ${{ matrix.args }}
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo tauri build ${{ matrix.args }} --verbose
 
       - name: Show built bundle tree
+        if: always()
         shell: bash
         run: |
           echo "=== bundle dir contents ==="
-          ls -R "${{ matrix.bundle_glob }}" || echo "no bundle dir at ${{ matrix.bundle_glob }}"
-          echo "=== full target tree (top 2 levels) ==="
-          find src-tauri/target -maxdepth 4 -type d | head -100
+          ls -R "${{ matrix.bundle_glob }}" 2>&1 || echo "no bundle dir at ${{ matrix.bundle_glob }}"
+          echo "=== full target tree ==="
+          find src-tauri/target -maxdepth 5 -type d 2>&1 | head -200 || true
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
