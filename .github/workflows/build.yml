@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -15,12 +15,16 @@ jobs:
         include:
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
+            name: macos-arm64
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
+            name: macos-x64
           - platform: ubuntu-22.04
             args: ""
+            name: linux-x64
           - platform: windows-latest
             args: ""
+            name: windows-x64
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -42,21 +46,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0" --locked
-
-      - name: Build (tagged release)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Build app (and publish release on tag)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Rusty Bots ${{ github.ref_name }}"
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Rusty Bots {0}', github.ref_name) || '' }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Build (CI check)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: cargo tauri build ${{ matrix.args }}
+      - name: Upload installer artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rusty-bots-${{ matrix.name }}
+          if-no-files-found: ignore
+          path: |
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.app.tar.gz
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/*/release/bundle/**/*.dmg
+            src-tauri/target/*/release/bundle/**/*.app.tar.gz
