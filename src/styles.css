@@ -1,0 +1,34 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; background: #1e1e24; color: #e6e6e6; }
+#sidebar { width: 240px; background: #15151a; padding: 16px; overflow-y: auto; border-right: 1px solid #2a2a33; }
+#sidebar h1 { font-size: 18px; margin: 0 0 12px; }
+#bot-list { list-style: none; padding: 0; margin: 12px 0; }
+#bot-list li { padding: 10px; margin-bottom: 4px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+#bot-list li:hover, #bot-list li.active { background: #2a2a33; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #555; display: inline-block; margin-left: 8px; }
+.dot.on { background: #3ddc84; }
+#main { flex: 1; padding: 24px; overflow-y: auto; }
+.view.hidden, .modal.hidden { display: none; }
+label { display: block; margin-bottom: 12px; font-size: 13px; }
+input, textarea, select { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #2a2a33; background: #15151a; color: #e6e6e6; font: inherit; margin-top: 4px; }
+button { padding: 8px 14px; background: #5865f2; color: white; border: none; border-radius: 4px; cursor: pointer; font: inherit; }
+button:hover { opacity: 0.9; }
+button.danger { background: #d83c3e; }
+.row { display: flex; gap: 8px; align-items: center; }
+.dash-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.status { padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.status.online { background: #3ddc84; color: #0a0a0a; }
+.status.offline { background: #555; }
+.dash-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 16px; height: calc(100vh - 140px); }
+.panel { background: #15151a; padding: 16px; border-radius: 8px; overflow: auto; }
+.panel:nth-child(3) { grid-column: 1 / 3; }
+.panel ul { list-style: none; padding: 0; margin: 8px 0; }
+.panel li { padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.panel li:hover, .panel li.active { background: #2a2a33; }
+#console-log { background: #0a0a0a; padding: 12px; border-radius: 4px; max-height: 100%; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
+.modal-body { background: #15151a; padding: 24px; border-radius: 8px; min-width: 400px; max-width: 600px; }
+#mm-roles { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; max-height: 200px; overflow-y: auto; }
+.role-chip { padding: 4px 10px; background: #2a2a33; border-radius: 12px; font-size: 12px; cursor: pointer; }
+.role-chip.has { background: #5865f2; }
+code { background: #0a0a0a; padding: 2px 6px; border-radius: 3px; }
