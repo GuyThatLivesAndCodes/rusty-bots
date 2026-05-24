@@ -49,6 +49,13 @@ fn main() {
             commands::set_automod_ignored_roles,
             commands::set_automod_whitelist,
             commands::set_automod_log_channel,
+            commands::get_advanced_detection_config,
+            commands::update_advanced_detection_config,
+            commands::toggle_spaced_variant_detection,
+            commands::toggle_special_char_variant_detection,
+            commands::toggle_acronym_detection,
+            commands::toggle_cross_message_detection,
+            commands::set_cross_message_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

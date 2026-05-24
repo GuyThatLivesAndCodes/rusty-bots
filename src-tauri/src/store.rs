@@ -31,6 +31,29 @@ pub struct AutoModConfig {
     pub ignored_roles: Vec<String>,
     pub whitelist_users: Vec<String>,
     pub log_channel: Option<String>,
+    #[serde(default)]
+    pub advanced_detection: AdvancedDetectionConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedDetectionConfig {
+    pub enable_spaced_variant: bool,
+    pub enable_special_char_variant: bool,
+    pub enable_acronym_detection: bool,
+    pub enable_cross_message_detection: bool,
+    pub cross_message_window_secs: u64,
+}
+
+impl Default for AdvancedDetectionConfig {
+    fn default() -> Self {
+        Self {
+            enable_spaced_variant: true,
+            enable_special_char_variant: true,
+            enable_acronym_detection: true,
+            enable_cross_message_detection: true,
+            cross_message_window_secs: 60,
+        }
+    }
 }
 
 impl Default for AutoModConfig {
@@ -42,6 +65,7 @@ impl Default for AutoModConfig {
             ignored_roles: vec![],
             whitelist_users: vec![],
             log_channel: None,
+            advanced_detection: AdvancedDetectionConfig::default(),
         }
     }
 }

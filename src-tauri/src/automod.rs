@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 
 pub struct AutoModState {
     pub user_message_history: Mutex<HashMap<UserId, Vec<MessageTimestamp>>>,
+    pub user_cross_message_buffer: Mutex<HashMap<UserId, Vec<CrossMessageEntry>>>,
 }
 
 #[derive(Clone)]
@@ -17,10 +18,17 @@ struct MessageTimestamp {
     mention_count: u32,
 }
 
+#[derive(Clone)]
+struct CrossMessageEntry {
+    time: DateTime<Utc>,
+    content: String,
+}
+
 impl AutoModState {
     pub fn new() -> Self {
         Self {
             user_message_history: Mutex::new(HashMap::new()),
+            user_cross_message_buffer: Mutex::new(HashMap::new()),
         }
     }
 
@@ -60,7 +68,7 @@ impl AutoModState {
 
         // Check each rule
         for rule in &config.rules {
-            if let Some(violation) = self.check_rule(ctx, rule, msg, &content_lower).await? {
+            if let Some(violation) = self.check_rule(ctx, rule, msg, &content_lower, config).await? {
                 return Ok(Some(violation));
             }
         }
@@ -74,6 +82,7 @@ impl AutoModState {
         rule: &AutoModRule,
         msg: &Message,
         content_lower: &str,
+        config: &crate::store::AutoModConfig,
     ) -> Result<Option<AutoModViolation>> {
         match rule {
             AutoModRule::SpamDetection {
@@ -106,13 +115,51 @@ impl AutoModState {
             }
             AutoModRule::BadWords { words, action } => {
                 for word in words {
-                    if content_lower.contains(&word.to_lowercase()) {
+                    let word_lower = word.to_lowercase();
+
+                    // Direct match
+                    if content_lower.contains(&word_lower) {
                         return Ok(Some(AutoModViolation {
                             rule_type: "Bad Words".to_string(),
                             action: action.clone(),
                             message_id: msg.id,
                             user_id: msg.author.id,
                         }));
+                    }
+
+                    // Advanced variant detection
+                    if config.advanced_detection.enable_spaced_variant && self.check_spaced_variant(&content_lower, &word_lower) {
+                        return Ok(Some(AutoModViolation {
+                            rule_type: "Bad Words (Spaced)".to_string(),
+                            action: action.clone(),
+                            message_id: msg.id,
+                            user_id: msg.author.id,
+                        }));
+                    }
+
+                    if config.advanced_detection.enable_special_char_variant && self.check_special_char_variant(&msg.content, &word_lower) {
+                        return Ok(Some(AutoModViolation {
+                            rule_type: "Bad Words (Special Chars)".to_string(),
+                            action: action.clone(),
+                            message_id: msg.id,
+                            user_id: msg.author.id,
+                        }));
+                    }
+
+                    if config.advanced_detection.enable_acronym_detection && self.check_acronym(&msg.content, &word_lower) {
+                        return Ok(Some(AutoModViolation {
+                            rule_type: "Bad Words (Acronym)".to_string(),
+                            action: action.clone(),
+                            message_id: msg.id,
+                            user_id: msg.author.id,
+                        }));
+                    }
+                }
+
+                // Cross-message detection
+                if config.advanced_detection.enable_cross_message_detection {
+                    if let Some(violation) = self.check_cross_message(msg, words, action)? {
+                        return Ok(Some(violation));
                     }
                 }
             }
@@ -199,6 +246,130 @@ impl AutoModState {
                 }
             }
         }
+        Ok(None)
+    }
+
+    fn check_spaced_variant(&self, content: &str, word: &str) -> bool {
+        if word.len() < 2 {
+            return false;
+        }
+
+        let chars: Vec<char> = word.chars().collect();
+        let mut pattern = String::new();
+
+        for (i, &ch) in chars.iter().enumerate() {
+            pattern.push(ch);
+            if i < chars.len() - 1 {
+                pattern.push_str("[\\s\\-._]*");
+            }
+        }
+
+        if let Ok(regex) = Regex::new(&pattern) {
+            regex.is_match(content)
+        } else {
+            false
+        }
+    }
+
+    fn check_special_char_variant(&self, content: &str, word: &str) -> bool {
+        if word.len() < 2 {
+            return false;
+        }
+
+        let chars: Vec<char> = word.chars().collect();
+        let special_chars = "!@#$%^&*()_+-=[]{}|;:,.<>?/~`";
+
+        let mut pattern = String::new();
+        for (i, &ch) in chars.iter().enumerate() {
+            pattern.push(ch);
+            if i < chars.len() - 1 {
+                pattern.push_str(&format!("[{}]*", regex::escape(special_chars)));
+            }
+        }
+
+        if let Ok(regex) = Regex::new(&pattern) {
+            regex.is_match(&content.to_lowercase())
+        } else {
+            false
+        }
+    }
+
+    fn check_acronym(&self, content: &str, word: &str) -> bool {
+        let words: Vec<&str> = content.split_whitespace().collect();
+        if words.len() < word.len() {
+            return false;
+        }
+
+        let target_word = word.to_uppercase();
+        let target_chars: Vec<char> = target_word.chars().collect();
+
+        for start_idx in 0..=words.len().saturating_sub(target_chars.len()) {
+            let acronym: String = words[start_idx..start_idx + target_chars.len()]
+                .iter()
+                .filter_map(|w| w.chars().next())
+                .map(|c| c.to_ascii_uppercase())
+                .collect();
+
+            if acronym == target_word {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn check_cross_message(
+        &self,
+        msg: &Message,
+        words: &[String],
+        action: &AutoModAction,
+    ) -> Result<Option<AutoModViolation>> {
+        let now = Utc::now();
+        let window_secs = 60i64;
+        let mut buffer = self.user_cross_message_buffer.lock();
+        let entries = buffer.entry(msg.author.id).or_insert_with(Vec::new);
+
+        entries.retain(|e| (now - e.time).num_seconds() < window_secs);
+        entries.push(CrossMessageEntry {
+            time: now,
+            content: msg.content.to_lowercase(),
+        });
+
+        let combined = entries
+            .iter()
+            .map(|e| e.content.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        for word in words {
+            let word_lower = word.to_lowercase();
+
+            let chars: Vec<char> = word_lower.chars().collect();
+            for i in 0..combined.len() {
+                let mut found = true;
+                let mut current_pos = i;
+
+                for ch in &chars {
+                    let remaining = &combined[current_pos..];
+                    if let Some(pos) = remaining.find(*ch) {
+                        current_pos += pos + 1;
+                    } else {
+                        found = false;
+                        break;
+                    }
+                }
+
+                if found && current_pos - i <= word.len() * 2 + 10 {
+                    return Ok(Some(AutoModViolation {
+                        rule_type: "Bad Words (Cross-Message)".to_string(),
+                        action: action.clone(),
+                        message_id: msg.id,
+                        user_id: msg.author.id,
+                    }));
+                }
+            }
+        }
+
         Ok(None)
     }
 }

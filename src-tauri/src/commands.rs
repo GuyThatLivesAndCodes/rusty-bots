@@ -4,7 +4,7 @@ use serenity::all::*;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
-use crate::store::{BotConfig, StoreHandle, AutoModConfig, AutoModRule, AutoModAction};
+use crate::store::{BotConfig, StoreHandle, AutoModConfig, AutoModRule, AutoModAction, AdvancedDetectionConfig};
 use crate::bot::{BotRegistry, start_bot};
 
 pub struct AppState {
@@ -294,6 +294,90 @@ pub fn set_automod_whitelist(state: State<'_, AppState>, id: String, users: Vec<
 pub fn set_automod_log_channel(state: State<'_, AppState>, id: String, channel: Option<String>) -> Result<(), String> {
     let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
     cfg.automod.log_channel = channel;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_advanced_detection_config(state: State<'_, AppState>, id: String) -> Result<AdvancedDetectionConfig, String> {
+    let cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    Ok(cfg.automod.advanced_detection)
+}
+
+#[tauri::command]
+pub fn update_advanced_detection_config(state: State<'_, AppState>, id: String, config: AdvancedDetectionConfig) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.advanced_detection = config;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_spaced_variant_detection(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.advanced_detection.enable_spaced_variant = enabled;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_special_char_variant_detection(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.advanced_detection.enable_special_char_variant = enabled;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_acronym_detection(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.advanced_detection.enable_acronym_detection = enabled;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_cross_message_detection(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.advanced_detection.enable_cross_message_detection = enabled;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_cross_message_window(state: State<'_, AppState>, id: String, seconds: u64) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.advanced_detection.cross_message_window_secs = seconds.max(5).min(600);
     state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
 
     if let Some(rb) = state.registry.running.lock().get(&id) {
