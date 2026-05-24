@@ -10,11 +10,13 @@ use anyhow::{Result, anyhow};
 
 use crate::store::BotConfig;
 use crate::ai::{self, ChatMessage};
+use crate::automod::{self, AutoModState};
 
 #[derive(Clone)]
 pub struct BotRuntimeState {
     pub config: Arc<Mutex<BotConfig>>,
     pub app: AppHandle,
+    pub automod: Arc<AutoModState>,
 }
 
 pub struct RunningBot {
@@ -23,6 +25,7 @@ pub struct RunningBot {
     pub shutdown_tx: Option<oneshot::Sender<()>>,
     pub http: Arc<Http>,
     pub cache: Arc<Cache>,
+    pub automod: Arc<AutoModState>,
 }
 
 #[derive(Default)]
@@ -75,16 +78,28 @@ impl EventHandler for Handler {
 
     async fn message(&self, ctx: Context, msg: Message) {
         if msg.author.bot { return; }
+
+        let cfg = {
+            let g = self.state.config.lock();
+            g.clone()
+        };
+
+        // Run automod checks
+        if let Ok(Some(violation)) = self.state.automod.check_message(&ctx, &cfg.automod, &msg).await {
+            if let Err(e) = automod::execute_action(&ctx, &violation, &msg, &cfg.automod).await {
+                tracing::warn!("automod action failed: {e}");
+            }
+            return;
+        }
+
         let me = match ctx.cache.current_user().id == msg.author.id { _ => ctx.cache.current_user().id };
         // Only respond when mentioned.
         let mentioned = msg.mentions.iter().any(|u| u.id == me);
         if !mentioned { return; }
 
-        let (cfg, bot_id) = {
-            let g = self.state.config.lock();
-            (g.clone(), g.id.clone())
-        };
         if !cfg.ai_enabled { return; }
+
+        let bot_id = cfg.id.clone();
 
         let _ = self.state.app.emit("bot-log", serde_json::json!({
             "bot_id": bot_id, "level": "info",
@@ -214,9 +229,11 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
         | GatewayIntents::GUILD_MEMBERS;
 
     let config_arc = Arc::new(Mutex::new(cfg.clone()));
+    let automod_state = Arc::new(AutoModState::new());
     let runtime_state = BotRuntimeState {
         config: config_arc.clone(),
         app: app.clone(),
+        automod: automod_state.clone(),
     };
 
     let mut client = Client::builder(&cfg.token, intents)
@@ -234,6 +251,7 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
         shutdown_tx: Some(tx),
         http,
         cache,
+        automod: automod_state,
     });
 
     let bot_id = cfg.id.clone();

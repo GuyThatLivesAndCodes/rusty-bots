@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use parking_lot::Mutex;
 use anyhow::Result;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotConfig {
@@ -18,11 +19,84 @@ pub struct BotConfig {
     pub ai_enabled: bool,
     #[serde(default = "default_history")]
     pub history_size: usize,
+    #[serde(default)]
+    pub automod: AutoModConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoModConfig {
+    pub enabled: bool,
+    pub rules: Vec<AutoModRule>,
+    pub ignored_channels: Vec<String>,
+    pub ignored_roles: Vec<String>,
+    pub whitelist_users: Vec<String>,
+    pub log_channel: Option<String>,
+}
+
+impl Default for AutoModConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rules: vec![],
+            ignored_channels: vec![],
+            ignored_roles: vec![],
+            whitelist_users: vec![],
+            log_channel: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum AutoModRule {
+    SpamDetection {
+        #[serde(default = "default_spam_threshold")]
+        message_threshold: u32,
+        #[serde(default = "default_spam_window")]
+        time_window_secs: u64,
+        action: AutoModAction,
+    },
+    BadWords {
+        words: Vec<String>,
+        action: AutoModAction,
+    },
+    Caps {
+        #[serde(default = "default_caps_threshold")]
+        threshold_percent: f32,
+        action: AutoModAction,
+    },
+    MentionSpam {
+        #[serde(default = "default_mention_threshold")]
+        mention_threshold: u32,
+        action: AutoModAction,
+    },
+    LinkFilter {
+        allowed_domains: Vec<String>,
+        action: AutoModAction,
+    },
+    InviteFilter {
+        action: AutoModAction,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum AutoModAction {
+    Delete,
+    Warn { max_warnings: u32 },
+    Timeout { duration_secs: u64 },
+    Kick,
+    Ban,
+    SendMessage { message: String },
 }
 
 fn default_model() -> String { "grok-4.3".to_string() }
 fn default_true() -> bool { true }
 fn default_history() -> usize { 10 }
+fn default_spam_threshold() -> u32 { 5 }
+fn default_spam_window() -> u64 { 10 }
+fn default_caps_threshold() -> f32 { 70.0 }
+fn default_mention_threshold() -> u32 { 5 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Store {

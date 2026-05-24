@@ -4,7 +4,7 @@ use serenity::all::*;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
-use crate::store::{BotConfig, StoreHandle};
+use crate::store::{BotConfig, StoreHandle, AutoModConfig, AutoModRule, AutoModAction};
 use crate::bot::{BotRegistry, start_bot};
 
 pub struct AppState {
@@ -37,6 +37,7 @@ pub struct UpsertBotInput {
     pub persona: Option<String>,
     pub ai_enabled: Option<bool>,
     pub history_size: Option<usize>,
+    pub automod: Option<AutoModConfig>,
 }
 
 #[tauri::command]
@@ -52,6 +53,7 @@ pub fn save_bot(state: State<'_, AppState>, input: UpsertBotInput) -> Result<Bot
         persona: input.persona.unwrap_or_else(|| existing.as_ref().map(|e| e.persona.clone()).unwrap_or_default()),
         ai_enabled: input.ai_enabled.unwrap_or_else(|| existing.as_ref().map(|e| e.ai_enabled).unwrap_or(true)),
         history_size: input.history_size.unwrap_or_else(|| existing.as_ref().map(|e| e.history_size).unwrap_or(10)),
+        automod: input.automod.unwrap_or_else(|| existing.as_ref().map(|e| e.automod.clone()).unwrap_or_default()),
     };
     state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
 
@@ -185,4 +187,118 @@ pub async fn remove_role(state: State<'_, AppState>, id: String, guild_id: Strin
     let uid: u64 = user_id.parse().map_err(|_| "bad user id".to_string())?;
     let rid: u64 = role_id.parse().map_err(|_| "bad role id".to_string())?;
     http.remove_member_role(GuildId::new(gid), UserId::new(uid), RoleId::new(rid), None).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_automod_config(state: State<'_, AppState>, id: String) -> Result<AutoModConfig, String> {
+    let cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    Ok(cfg.automod)
+}
+
+#[tauri::command]
+pub fn update_automod_config(state: State<'_, AppState>, id: String, config: AutoModConfig) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod = config;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    // Sync config to running bot if it's online
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_automod(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.enabled = enabled;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    // Sync config to running bot if it's online
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn add_automod_rule(state: State<'_, AppState>, id: String, rule: AutoModRule) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.rules.push(rule);
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_automod_rule(state: State<'_, AppState>, id: String, rule_index: usize) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    if rule_index < cfg.automod.rules.len() {
+        cfg.automod.rules.remove(rule_index);
+    }
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_automod_ignored_channels(state: State<'_, AppState>, id: String, channels: Vec<String>) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.ignored_channels = channels;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_automod_ignored_roles(state: State<'_, AppState>, id: String, roles: Vec<String>) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.ignored_roles = roles;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_automod_whitelist(state: State<'_, AppState>, id: String, users: Vec<String>) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.whitelist_users = users;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_automod_log_channel(state: State<'_, AppState>, id: String, channel: Option<String>) -> Result<(), String> {
+    let mut cfg = state.store.get(&id).ok_or_else(|| "bot not found".to_string())?;
+    cfg.automod.log_channel = channel;
+    state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
+
+    if let Some(rb) = state.registry.running.lock().get(&id) {
+        *rb.config.lock() = cfg;
+    }
+
+    Ok(())
 }

@@ -4,6 +4,7 @@ mod store;
 mod ai;
 mod bot;
 mod commands;
+mod automod;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -39,6 +40,15 @@ fn main() {
             commands::timeout,
             commands::add_role,
             commands::remove_role,
+            commands::get_automod_config,
+            commands::update_automod_config,
+            commands::toggle_automod,
+            commands::add_automod_rule,
+            commands::remove_automod_rule,
+            commands::set_automod_ignored_channels,
+            commands::set_automod_ignored_roles,
+            commands::set_automod_whitelist,
+            commands::set_automod_log_channel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
