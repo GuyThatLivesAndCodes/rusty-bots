@@ -120,6 +120,22 @@ pub fn tool_schema() -> Value {
                     "required": ["user_id", "role_id"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "join_voice",
+                "description": "Join the voice channel that the mentioning user is currently in, to talk live.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "leave_voice",
+                "description": "Leave the current voice channel.",
+                "parameters": {"type": "object", "properties": {}}
+            }
         }
     ])
 }

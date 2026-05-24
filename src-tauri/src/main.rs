@@ -4,6 +4,7 @@ mod store;
 mod ai;
 mod bot;
 mod commands;
+mod voice;
 
 use std::sync::Arc;
 use tauri::Manager;

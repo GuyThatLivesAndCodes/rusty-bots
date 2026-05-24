@@ -3,9 +3,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use serenity::all::*;
 use serenity::async_trait;
-use serenity::prelude::*;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
+use songbird::SerenityInit;
 use anyhow::{Result, anyhow};
 
 use crate::store::BotConfig;
@@ -61,7 +61,7 @@ struct Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, _ctx: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
         let id = self.state.config.lock().id.clone();
         let _ = self.state.app.emit("bot-log", serde_json::json!({
             "bot_id": id,
@@ -71,6 +71,64 @@ impl EventHandler for Handler {
         let _ = self.state.app.emit("bot-status", serde_json::json!({
             "bot_id": id, "online": true, "username": ready.user.name,
         }));
+
+        // Register the /aijoinvc slash command globally.
+        let cmd = CreateCommand::new("aijoinvc")
+            .description("Have the AI join a voice channel")
+            .add_option(
+                CreateCommandOption::new(CommandOptionType::Channel, "channel", "Voice channel to join")
+                    .channel_types(vec![ChannelType::Voice])
+                    .required(true),
+            );
+        if let Err(e) = Command::create_global_command(&ctx.http, cmd).await {
+            let _ = self.state.app.emit("bot-log", serde_json::json!({
+                "bot_id": id, "level": "error", "msg": format!("slash command register failed: {e}"),
+            }));
+        }
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        let Interaction::Command(cmd) = interaction else { return; };
+        if cmd.data.name != "aijoinvc" { return; }
+        let (cfg, bot_id) = { let g = self.state.config.lock(); (g.clone(), g.id.clone()) };
+        let Some(guild_id) = cmd.guild_id else {
+            let _ = cmd.create_response(&ctx.http, CreateInteractionResponse::Message(
+                CreateInteractionResponseMessage::new().content("Use this in a server.").ephemeral(true))).await;
+            return;
+        };
+        let channel_id = cmd.data.options.iter()
+            .find(|o| o.name == "channel")
+            .and_then(|o| o.value.as_channel_id());
+        let Some(channel_id) = channel_id else { return; };
+
+        let _ = cmd.create_response(&ctx.http, CreateInteractionResponse::Message(
+            CreateInteractionResponseMessage::new().content(format!("Joining <#{}>…", channel_id)))).await;
+
+        match crate::voice::join_voice(&ctx, self.state.app.clone(), bot_id.clone(), cfg, guild_id, channel_id).await {
+            Ok(()) => {}
+            Err(e) => {
+                let _ = cmd.create_followup(&ctx.http, CreateInteractionResponseFollowup::new()
+                    .content(format!("Failed to join: {e}")).ephemeral(true)).await;
+            }
+        }
+    }
+
+    async fn voice_state_update(&self, ctx: Context, _old: Option<VoiceState>, new: VoiceState) {
+        let Some(guild_id) = new.guild_id else { return; };
+        if !crate::voice::is_in_voice(guild_id.get()) { return; }
+        // Find the channel the bot is in.
+        let bot_id = ctx.cache.current_user().id;
+        let bot_channel = ctx.cache.guild(guild_id)
+            .and_then(|g| g.voice_states.get(&bot_id).and_then(|vs| vs.channel_id));
+        if let Some(ch) = bot_channel {
+            if crate::voice::non_bot_members_in_channel(&ctx, guild_id, ch) == 0 {
+                let _ = crate::voice::leave_voice(&ctx, guild_id).await;
+                let _ = self.state.app.emit("bot-log", serde_json::json!({
+                    "bot_id": self.state.config.lock().id.clone(), "level": "info",
+                    "msg": "voice channel empty — left",
+                }));
+            }
+        }
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
@@ -138,7 +196,7 @@ impl EventHandler for Handler {
         if let Some(calls) = resp.tool_calls {
             for call in calls {
                 let args: serde_json::Value = serde_json::from_str(&call.function.arguments).unwrap_or(serde_json::json!({}));
-                let result = execute_tool(&ctx, &msg, &call.function.name, &args).await;
+                let result = execute_tool(&ctx, &msg, &call.function.name, &args, &self.state.app, &bot_id, &cfg).await;
                 let _ = self.state.app.emit("bot-log", serde_json::json!({
                     "bot_id": bot_id, "level": "info",
                     "msg": format!("tool {} -> {:?}", call.function.name, result),
@@ -152,9 +210,21 @@ impl EventHandler for Handler {
     }
 }
 
-async fn execute_tool(ctx: &Context, msg: &Message, name: &str, args: &serde_json::Value) -> Result<String> {
+async fn execute_tool(ctx: &Context, msg: &Message, name: &str, args: &serde_json::Value, app: &AppHandle, bot_id: &str, cfg: &BotConfig) -> Result<String> {
     let guild_id = msg.guild_id.ok_or_else(|| anyhow!("not in a guild"))?;
     match name {
+        "join_voice" => {
+            // Join the voice channel the mentioning user is currently in.
+            let channel = ctx.cache.guild(guild_id)
+                .and_then(|g| g.voice_states.get(&msg.author.id).and_then(|vs| vs.channel_id));
+            let channel = channel.ok_or_else(|| anyhow!("user is not in a voice channel"))?;
+            crate::voice::join_voice(ctx, app.clone(), bot_id.to_string(), cfg.clone(), guild_id, channel).await?;
+            Ok("joined voice".into())
+        }
+        "leave_voice" => {
+            crate::voice::leave_voice(ctx, guild_id).await?;
+            Ok("left voice".into())
+        }
         "send_message" => {
             let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !content.is_empty() {
@@ -211,7 +281,8 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
     let intents = GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
-        | GatewayIntents::GUILD_MEMBERS;
+        | GatewayIntents::GUILD_MEMBERS
+        | GatewayIntents::GUILD_VOICE_STATES;
 
     let config_arc = Arc::new(Mutex::new(cfg.clone()));
     let runtime_state = BotRuntimeState {
@@ -221,6 +292,7 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
 
     let mut client = Client::builder(&cfg.token, intents)
         .event_handler(Handler { state: runtime_state })
+        .register_songbird()
         .await?;
 
     let shard_manager = client.shard_manager.clone();
