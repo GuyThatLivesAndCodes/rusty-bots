@@ -16,15 +16,19 @@ jobs:
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
             name: macos-arm64
+            bundle_glob: "src-tauri/target/aarch64-apple-darwin/release/bundle"
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
             name: macos-x64
+            bundle_glob: "src-tauri/target/x86_64-apple-darwin/release/bundle"
           - platform: ubuntu-22.04
             args: ""
             name: linux-x64
+            bundle_glob: "src-tauri/target/release/bundle"
           - platform: windows-latest
             args: ""
             name: windows-x64
+            bundle_glob: "src-tauri/target/release/bundle"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -46,30 +50,46 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
-      - name: Build app (and publish release on tag)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Rusty Bots {0}', github.ref_name) || '' }}
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0" --locked
 
-      - name: Upload installer artifacts
+      - name: Regenerate icons from source PNG
+        working-directory: src-tauri
+        run: cargo tauri icon icons/icon.png
+
+      - name: Build app
+        working-directory: src-tauri
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo tauri build ${{ matrix.args }} --verbose
+
+      - name: Show built bundle tree
         if: always()
+        shell: bash
+        run: |
+          echo "=== bundle dir contents ==="
+          ls -R "${{ matrix.bundle_glob }}" 2>&1 || echo "no bundle dir at ${{ matrix.bundle_glob }}"
+          echo "=== full target tree ==="
+          find src-tauri/target -maxdepth 5 -type d 2>&1 | head -200 || true
+
+      - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: rusty-bots-${{ matrix.name }}
-          if-no-files-found: ignore
-          path: |
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.app.tar.gz
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.rpm
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
-            src-tauri/target/*/release/bundle/**/*.dmg
-            src-tauri/target/*/release/bundle/**/*.app.tar.gz
+          if-no-files-found: error
+          path: ${{ matrix.bundle_glob }}/**/*
+
+      - name: Publish to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Rusty Bots ${{ github.ref_name }}
+          files: |
+            ${{ matrix.bundle_glob }}/**/*.dmg
+            ${{ matrix.bundle_glob }}/**/*.app.tar.gz
+            ${{ matrix.bundle_glob }}/**/*.AppImage
+            ${{ matrix.bundle_glob }}/**/*.deb
+            ${{ matrix.bundle_glob }}/**/*.rpm
+            ${{ matrix.bundle_glob }}/**/*.msi
+            ${{ matrix.bundle_glob }}/**/*.exe

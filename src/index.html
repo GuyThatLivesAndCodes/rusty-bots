@@ -16,54 +16,94 @@
       <p>Select or create a bot.</p>
     </section>
 
-    <section id="editor" class="view hidden">
-      <h2 id="editor-title">New Bot</h2>
-      <label>Name <input id="f-name" /></label>
-      <label>Discord Bot Token <input id="f-token" type="password" /></label>
-      <label>xAI API Key <input id="f-xai" type="password" /></label>
-      <label>Model
-        <select id="f-model">
-          <option>grok-4.3</option>
-          <option>grok-4.20-reasoning</option>
-          <option>grok-4.20-non-reasoning</option>
-        </select>
-      </label>
-      <label>History size <input id="f-history" type="number" value="10" min="1" max="50" /></label>
-      <label><input id="f-ai" type="checkbox" checked /> AI responses enabled</label>
-      <label>Persona / System Prompt
-        <textarea id="f-persona" rows="8" placeholder="You are..."></textarea>
-      </label>
-      <div class="row">
-        <button id="save-btn">Save</button>
-        <button id="delete-btn" class="danger">Delete</button>
-      </div>
-    </section>
-
     <section id="dashboard" class="view hidden">
       <header class="dash-head">
         <h2 id="dash-name"></h2>
         <span id="dash-status" class="status offline">offline</span>
         <button id="start-btn">Start</button>
         <button id="stop-btn">Stop</button>
-        <button id="edit-btn">Edit</button>
       </header>
 
-      <div class="dash-grid">
-        <div class="panel">
-          <h3>Servers</h3>
-          <ul id="guild-list"></ul>
-        </div>
-        <div class="panel">
-          <h3 id="members-title">Members</h3>
-          <div class="row">
-            <input id="member-search" placeholder="Filter…" />
-            <button id="refresh-members">Refresh</button>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="dashboard-tab">Dashboard</button>
+        <button class="tab-btn" data-tab="servers-tab">Servers</button>
+        <button class="tab-btn" data-tab="members-tab">Members</button>
+        <button class="tab-btn" data-tab="ai-tab">AI Settings</button>
+        <button class="tab-btn" data-tab="console-tab">Console</button>
+        <button class="tab-btn" data-tab="settings-tab">Settings</button>
+      </nav>
+
+      <div id="dashboard-tab" class="tab-content active">
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="label">Status</span>
+            <span class="value" id="ds-status">Offline</span>
           </div>
-          <ul id="member-list"></ul>
+          <div class="stat">
+            <span class="label">Guilds</span>
+            <span class="value" id="ds-guilds">—</span>
+          </div>
+          <div class="stat">
+            <span class="label">AI Enabled</span>
+            <span class="value" id="ds-ai">No</span>
+          </div>
+          <div class="stat">
+            <span class="label">Model</span>
+            <span class="value" id="ds-model">—</span>
+          </div>
         </div>
-        <div class="panel">
-          <h3>Console</h3>
-          <pre id="console-log"></pre>
+        <div id="ds-hint" class="hint"></div>
+      </div>
+
+      <div id="servers-tab" class="tab-content hidden">
+        <h3>Servers This Bot Is In</h3>
+        <ul id="guild-list"></ul>
+        <p class="hint" id="servers-hint">Start the bot to load its servers.</p>
+      </div>
+
+      <div id="members-tab" class="tab-content hidden">
+        <h3 id="members-title">Members</h3>
+        <div class="row">
+          <input id="member-search" placeholder="Filter…" />
+          <button id="refresh-members">Refresh</button>
+        </div>
+        <ul id="member-list"></ul>
+        <p class="hint" id="members-hint">Pick a server from the Servers tab first.</p>
+      </div>
+
+      <div id="ai-tab" class="tab-content hidden">
+        <h3>AI Configuration</h3>
+        <label>xAI API Key <input id="ai-xai" type="password" /></label>
+        <label>Model
+          <select id="ai-model">
+            <option>grok-4.3</option>
+            <option>grok-4.20-reasoning</option>
+            <option>grok-4.20-non-reasoning</option>
+          </select>
+        </label>
+        <label>History size (messages) <input id="ai-history" type="number" min="1" max="50" /></label>
+        <label><input id="ai-enabled" type="checkbox" /> AI responses enabled</label>
+        <label>Persona / System Prompt
+          <textarea id="ai-persona" rows="10" placeholder="You are a Discord bot that..."></textarea>
+        </label>
+        <div class="row">
+          <button id="ai-save-btn">Save AI Settings</button>
+        </div>
+      </div>
+
+      <div id="console-tab" class="tab-content hidden">
+        <h3>Console Output</h3>
+        <pre id="console-log"></pre>
+      </div>
+
+      <div id="settings-tab" class="tab-content hidden">
+        <h3>Bot Settings</h3>
+        <label>Name <input id="f-name" /></label>
+        <label>Discord Bot Token <input id="f-token" type="password" /></label>
+        <p class="hint">After changing the token, restart the bot for it to take effect.</p>
+        <div class="row">
+          <button id="save-btn">Save</button>
+          <button id="delete-btn" class="danger">Delete Bot</button>
         </div>
       </div>
     </section>
