@@ -61,6 +61,7 @@ jobs:
         working-directory: src-tauri
         env:
           RUST_BACKTRACE: "1"
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: cargo tauri build ${{ matrix.args }} --verbose
 
       - name: Show built bundle tree
