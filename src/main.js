@@ -118,6 +118,16 @@ function openDashboard() {
   $("ai-enabled").checked = b.ai_enabled ?? true;
   $("ai-persona").value = b.persona || "";
 
+  // Voice tab
+  $("voice-enabled").checked = b.voice_enabled ?? true;
+  const wantVoice = b.voice || "eve";
+  if (![...$("voice-name").options].some((o) => o.value === wantVoice)) {
+    const opt = document.createElement("option");
+    opt.value = wantVoice; opt.textContent = wantVoice;
+    $("voice-name").appendChild(opt);
+  }
+  $("voice-name").value = wantVoice;
+
   // Reset transient lists
   $("guild-list").innerHTML = "";
   $("member-list").innerHTML = "";
@@ -173,6 +183,23 @@ async function saveAISettings() {
   await refreshBots();
   openDashboard();
   switchTab("ai-tab");
+}
+
+async function saveVoiceSettings() {
+  if (state.selected === "__new__") { alert("Save the bot in Settings tab first."); return; }
+  const b = currentBot();
+  if (!b) return;
+  const input = {
+    id: state.selected,
+    name: b.name,
+    token: b.token,
+    voice_enabled: $("voice-enabled").checked,
+    voice: $("voice-name").value,
+  };
+  await invoke("save_bot", { input });
+  await refreshBots();
+  openDashboard();
+  switchTab("voice-tab");
 }
 
 async function deleteBot() {
@@ -316,6 +343,7 @@ $("refresh-members").onclick = refreshMembers;
 $("member-search").oninput = refreshMembers;
 $("mm-close").onclick = () => $("member-modal").classList.add("hidden");
 $("ai-save-btn").onclick = saveAISettings;
+$("voice-save-btn").onclick = saveVoiceSettings;
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.onclick = () => switchTab(btn.dataset.tab);
 });

@@ -110,6 +110,9 @@ pub async fn join_voice(
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> Result<()> {
+    if !cfg.voice_enabled {
+        return Err(anyhow!("voice is disabled for this bot"));
+    }
     if cfg.xai_api_key.is_empty() {
         return Err(anyhow!("xAI API key required for voice"));
     }
@@ -150,7 +153,7 @@ pub async fn join_voice(
     let session_cfg = serde_json::json!({
         "type": "session.update",
         "session": {
-            "voice": "eve",
+            "voice": cfg.voice,
             "instructions": cfg.persona,
             "turn_detection": {
                 "type": "server_vad",

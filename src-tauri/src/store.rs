@@ -18,7 +18,13 @@ pub struct BotConfig {
     pub ai_enabled: bool,
     #[serde(default = "default_history")]
     pub history_size: usize,
+    #[serde(default = "default_true")]
+    pub voice_enabled: bool,
+    #[serde(default = "default_voice")]
+    pub voice: String,
 }
+
+fn default_voice() -> String { "eve".to_string() }
 
 fn default_model() -> String { "grok-4.3".to_string() }
 fn default_true() -> bool { true }
