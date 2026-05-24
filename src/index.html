@@ -29,6 +29,7 @@
         <button class="tab-btn" data-tab="servers-tab">Servers</button>
         <button class="tab-btn" data-tab="members-tab">Members</button>
         <button class="tab-btn" data-tab="ai-tab">AI Settings</button>
+        <button class="tab-btn" data-tab="automod-tab">Auto-Mod</button>
         <button class="tab-btn" data-tab="console-tab">Console</button>
         <button class="tab-btn" data-tab="settings-tab">Settings</button>
       </nav>
@@ -88,6 +89,69 @@
         </label>
         <div class="row">
           <button id="ai-save-btn">Save AI Settings</button>
+        </div>
+      </div>
+
+      <div id="automod-tab" class="tab-content hidden">
+        <h3>Auto-Mod Settings</h3>
+
+        <div class="section">
+          <label><input id="automod-enabled" type="checkbox" /> Enable Auto-Mod</label>
+        </div>
+
+        <div class="section">
+          <h4>Rules</h4>
+          <div class="rule-controls">
+            <select id="rule-type">
+              <option value="BadWords">Bad Words</option>
+              <option value="SpamDetection">Spam Detection</option>
+              <option value="Caps">Excessive Caps</option>
+              <option value="MentionSpam">Mention Spam</option>
+              <option value="LinkFilter">Link Filter</option>
+              <option value="InviteFilter">Invite Filter</option>
+            </select>
+            <button id="add-rule-btn">Add Rule</button>
+          </div>
+          <ul id="rules-list"></ul>
+        </div>
+
+        <div class="section">
+          <h4>Advanced Detection Methods</h4>
+          <label><input id="detect-spaced" type="checkbox" checked /> Detect spaced variants (s h i t, s-h-i-t)</label>
+          <label><input id="detect-special-chars" type="checkbox" checked /> Detect special char variants (s***t)</label>
+          <label><input id="detect-acronym" type="checkbox" checked /> Detect acronyms (first letters of words)</label>
+          <label><input id="detect-cross-message" type="checkbox" checked /> Detect cross-message patterns</label>
+          <label>Cross-message window (seconds)
+            <input id="cross-message-window" type="number" min="5" max="600" value="60" />
+          </label>
+          <button id="save-detection-btn">Save Detection Settings</button>
+        </div>
+
+        <div class="section">
+          <h4>Ignored Channels</h4>
+          <input id="ignore-channels-input" placeholder="Enter channel IDs (comma-separated)" />
+          <button id="save-ignored-channels-btn">Save</button>
+          <div id="ignored-channels-list"></div>
+        </div>
+
+        <div class="section">
+          <h4>Ignored Roles</h4>
+          <input id="ignore-roles-input" placeholder="Enter role IDs (comma-separated)" />
+          <button id="save-ignored-roles-btn">Save</button>
+          <div id="ignored-roles-list"></div>
+        </div>
+
+        <div class="section">
+          <h4>Whitelist Users</h4>
+          <input id="whitelist-users-input" placeholder="Enter user IDs (comma-separated)" />
+          <button id="save-whitelist-btn">Save</button>
+          <div id="whitelist-users-list"></div>
+        </div>
+
+        <div class="section">
+          <h4>Logging</h4>
+          <input id="log-channel-input" placeholder="Log channel ID (optional)" />
+          <button id="save-log-channel-btn">Save Log Channel</button>
         </div>
       </div>
 

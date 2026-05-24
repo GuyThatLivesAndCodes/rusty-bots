@@ -25,6 +25,21 @@ function emptyBot() {
     ai_enabled: true,
     history_size: 10,
     running: false,
+    automod: {
+      enabled: false,
+      rules: [],
+      ignored_channels: [],
+      ignored_roles: [],
+      whitelist_users: [],
+      log_channel: null,
+      advanced_detection: {
+        enable_spaced_variant: true,
+        enable_special_char_variant: true,
+        enable_acronym_detection: true,
+        enable_cross_message_detection: true,
+        cross_message_window_secs: 60,
+      },
+    },
   };
 }
 
@@ -122,6 +137,9 @@ function openDashboard() {
   $("guild-list").innerHTML = "";
   $("member-list").innerHTML = "";
   $("console-log").textContent = (state.logs[b.id] || []).join("\n");
+
+  // Auto-Mod tab
+  loadAutoModConfig(b);
 
   showView("dashboard");
 
@@ -301,6 +319,184 @@ function switchTab(tabId) {
   }
 }
 
+async function loadAutoModConfig(b) {
+  if (state.selected === "__new__" || !state.selected) {
+    const config = b.automod || emptyBot().automod;
+    populateAutoModUI(config);
+    return;
+  }
+  try {
+    const config = await invoke("get_automod_config", { id: state.selected });
+    populateAutoModUI(config);
+  } catch (e) {
+    console.error("Failed to load auto-mod config:", e);
+    const config = b.automod || emptyBot().automod;
+    populateAutoModUI(config);
+  }
+}
+
+function populateAutoModUI(config) {
+  $("automod-enabled").checked = config.enabled || false;
+  $("detect-spaced").checked = config.advanced_detection?.enable_spaced_variant ?? true;
+  $("detect-special-chars").checked = config.advanced_detection?.enable_special_char_variant ?? true;
+  $("detect-acronym").checked = config.advanced_detection?.enable_acronym_detection ?? true;
+  $("detect-cross-message").checked = config.advanced_detection?.enable_cross_message_detection ?? true;
+  $("cross-message-window").value = config.advanced_detection?.cross_message_window_secs ?? 60;
+  $("ignore-channels-input").value = (config.ignored_channels || []).join(", ");
+  $("ignore-roles-input").value = (config.ignored_roles || []).join(", ");
+  $("whitelist-users-input").value = (config.whitelist_users || []).join(", ");
+  $("log-channel-input").value = config.log_channel || "";
+  renderRulesList(config.rules || []);
+}
+
+function renderRulesList(rules) {
+  const list = $("rules-list");
+  list.innerHTML = "";
+  for (let i = 0; i < rules.length; i++) {
+    const rule = rules[i];
+    const li = document.createElement("li");
+    li.className = "rule-item";
+    li.innerHTML = `
+      <div class="rule-content">
+        <strong>${rule.type}</strong>
+        <button class="btn-small" onclick="deleteRule(${i})">Delete</button>
+      </div>
+      <pre>${JSON.stringify(rule, null, 2)}</pre>
+    `;
+    list.appendChild(li);
+  }
+}
+
+async function deleteRule(index) {
+  if (state.selected === "__new__" || !state.selected) return;
+  try {
+    await invoke("remove_automod_rule", { id: state.selected, ruleIndex: index });
+    const config = await invoke("get_automod_config", { id: state.selected });
+    populateAutoModUI(config);
+  } catch (e) { alert("Error deleting rule: " + e); }
+}
+
+async function addRule() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const ruleType = $("rule-type").value;
+  let rule;
+
+  if (ruleType === "BadWords") {
+    const words = prompt("Enter bad words (comma-separated):") || "";
+    if (!words.trim()) return;
+    rule = {
+      type: "BadWords",
+      words: words.split(",").map(w => w.trim()),
+      action: { type: "Delete" },
+    };
+  } else if (ruleType === "SpamDetection") {
+    rule = {
+      type: "SpamDetection",
+      message_threshold: 5,
+      time_window_secs: 10,
+      action: { type: "Timeout", duration_secs: 60 },
+    };
+  } else if (ruleType === "Caps") {
+    rule = {
+      type: "Caps",
+      threshold_percent: 70.0,
+      action: { type: "Delete" },
+    };
+  } else if (ruleType === "MentionSpam") {
+    rule = {
+      type: "MentionSpam",
+      mention_threshold: 5,
+      action: { type: "Delete" },
+    };
+  } else if (ruleType === "LinkFilter") {
+    const domains = prompt("Enter allowed domains (comma-separated):", "discord.com") || "";
+    rule = {
+      type: "LinkFilter",
+      allowed_domains: domains.split(",").map(d => d.trim()),
+      action: { type: "Delete" },
+    };
+  } else if (ruleType === "InviteFilter") {
+    rule = {
+      type: "InviteFilter",
+      action: { type: "Delete" },
+    };
+  }
+
+  try {
+    await invoke("add_automod_rule", { id: state.selected, rule });
+    const config = await invoke("get_automod_config", { id: state.selected });
+    populateAutoModUI(config);
+  } catch (e) { alert("Error adding rule: " + e); }
+}
+
+async function saveDetectionSettings() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const config = {
+    enable_spaced_variant: $("detect-spaced").checked,
+    enable_special_char_variant: $("detect-special-chars").checked,
+    enable_acronym_detection: $("detect-acronym").checked,
+    enable_cross_message_detection: $("detect-cross-message").checked,
+    cross_message_window_secs: parseInt($("cross-message-window").value, 10) || 60,
+  };
+  try {
+    await invoke("update_advanced_detection_config", { id: state.selected, config });
+    alert("Detection settings saved!");
+  } catch (e) { alert("Error saving: " + e); }
+}
+
+async function saveIgnoredChannels() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const channels = $("ignore-channels-input").value
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s);
+  try {
+    await invoke("set_automod_ignored_channels", { id: state.selected, channels });
+    alert("Ignored channels saved!");
+  } catch (e) { alert("Error saving: " + e); }
+}
+
+async function saveIgnoredRoles() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const roles = $("ignore-roles-input").value
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s);
+  try {
+    await invoke("set_automod_ignored_roles", { id: state.selected, roles });
+    alert("Ignored roles saved!");
+  } catch (e) { alert("Error saving: " + e); }
+}
+
+async function saveWhitelist() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const users = $("whitelist-users-input").value
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s);
+  try {
+    await invoke("set_automod_whitelist", { id: state.selected, users });
+    alert("Whitelist saved!");
+  } catch (e) { alert("Error saving: " + e); }
+}
+
+async function saveLogChannel() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const channel = $("log-channel-input").value.trim() || null;
+  try {
+    await invoke("set_automod_log_channel", { id: state.selected, channel });
+    alert("Log channel saved!");
+  } catch (e) { alert("Error saving: " + e); }
+}
+
+async function toggleAutoMod() {
+  if (state.selected === "__new__" || !state.selected) { alert("Save the bot first."); return; }
+  const enabled = $("automod-enabled").checked;
+  try {
+    await invoke("toggle_automod", { id: state.selected, enabled });
+  } catch (e) { alert("Error: " + e); }
+}
+
 // Event wiring
 $("new-bot-btn").onclick = newBot;
 $("save-btn").onclick = saveSettings;
@@ -316,6 +512,13 @@ $("refresh-members").onclick = refreshMembers;
 $("member-search").oninput = refreshMembers;
 $("mm-close").onclick = () => $("member-modal").classList.add("hidden");
 $("ai-save-btn").onclick = saveAISettings;
+$("automod-enabled").onchange = toggleAutoMod;
+$("add-rule-btn").onclick = addRule;
+$("save-detection-btn").onclick = saveDetectionSettings;
+$("save-ignored-channels-btn").onclick = saveIgnoredChannels;
+$("save-ignored-roles-btn").onclick = saveIgnoredRoles;
+$("save-whitelist-btn").onclick = saveWhitelist;
+$("save-log-channel-btn").onclick = saveLogChannel;
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.onclick = () => switchTab(btn.dataset.tab);
 });

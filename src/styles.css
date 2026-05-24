@@ -51,3 +51,16 @@ button.danger { background: #d83c3e; }
 code { background: #0a0a0a; padding: 2px 6px; border-radius: 3px; }
 .hint { color: #888; font-size: 13px; margin-top: 12px; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Auto-Mod section styles */
+.section { background: #15151a; padding: 16px; border-radius: 6px; margin-bottom: 16px; border: 1px solid #2a2a33; }
+.section h4 { margin: 0 0 12px; color: #5865f2; }
+.rule-controls { display: flex; gap: 8px; margin-bottom: 12px; }
+.rule-controls select { flex: 1; }
+.rule-controls button { white-space: nowrap; }
+#rules-list { list-style: none; padding: 0; margin: 0; }
+.rule-item { background: #0a0a0a; padding: 12px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #5865f2; }
+.rule-content { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.rule-item pre { margin: 8px 0 0; font-size: 11px; background: #1e1e24; padding: 8px; border-radius: 4px; overflow-x: auto; }
+.btn-small { padding: 4px 8px; font-size: 12px; }
+#ignored-channels-list, #ignored-roles-list, #whitelist-users-list { margin-top: 12px; font-size: 13px; color: #999; }
