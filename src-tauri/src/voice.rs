@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use parking_lot::Mutex;
@@ -38,6 +38,12 @@ pub fn is_in_voice(guild_id: u64) -> bool {
     sessions().lock().contains_key(&guild_id)
 }
 
+fn log(app: &AppHandle, bot_id: &str, level: &str, msg: impl Into<String>) {
+    let _ = app.emit("bot-log", serde_json::json!({
+        "bot_id": bot_id, "level": level, "msg": msg.into(),
+    }));
+}
+
 /// Streaming PCM source that songbird plays. Returns silence when no data is
 /// buffered so the track stays alive for the whole call.
 struct StreamSource {
@@ -71,9 +77,12 @@ impl MediaSource for StreamSource {
     fn byte_len(&self) -> Option<u64> { None }
 }
 
-/// Receives decoded Discord audio and forwards mono PCM16 to xAI.
+/// Receives decoded Discord audio (mono 48kHz i16) and forwards PCM16 bytes to xAI.
 struct Receiver {
     tx: mpsc::UnboundedSender<Vec<u8>>,
+    app: AppHandle,
+    bot_id: String,
+    heard: Arc<AtomicBool>,
 }
 
 #[async_trait]
@@ -82,19 +91,13 @@ impl VoiceEventHandler for Receiver {
         if let EventContext::VoiceTick(tick) = ctx {
             for (_ssrc, data) in tick.speaking.iter() {
                 if let Some(pcm) = &data.decoded_voice {
-                    // pcm is 48kHz stereo interleaved i16; downmix to mono.
-                    let mut mono = Vec::with_capacity(pcm.len() / 2 * 2);
-                    let mut i = 0;
-                    while i + 1 < pcm.len() {
-                        let l = pcm[i] as i32;
-                        let r = pcm[i + 1] as i32;
-                        let m = ((l + r) / 2) as i16;
-                        mono.extend_from_slice(&m.to_le_bytes());
-                        i += 2;
+                    if pcm.is_empty() { continue; }
+                    if !self.heard.swap(true, Ordering::Relaxed) {
+                        log(&self.app, &self.bot_id, "info", "voice: capturing audio from users");
                     }
-                    if !mono.is_empty() {
-                        let _ = self.tx.send(mono);
-                    }
+                    let mut bytes = Vec::with_capacity(pcm.len() * 2);
+                    for s in pcm { bytes.extend_from_slice(&s.to_le_bytes()); }
+                    let _ = self.tx.send(bytes);
                 }
             }
         }
@@ -143,6 +146,8 @@ pub async fn join_voice(
         }
     };
 
+    log(&app, &bot_id, "info", format!("voice: joined channel {channel_id}, setting up audio bridge"));
+
     let done = Arc::new(AtomicBool::new(false));
     let playback_buf: Arc<Mutex<VecDeque<u8>>> = Arc::new(Mutex::new(VecDeque::new()));
 
@@ -151,7 +156,12 @@ pub async fn join_voice(
 
     {
         let mut call = call_lock.lock().await;
-        call.add_global_event(CoreEvent::VoiceTick.into(), Receiver { tx: in_tx.clone() });
+        call.add_global_event(CoreEvent::VoiceTick.into(), Receiver {
+            tx: in_tx.clone(),
+            app: app.clone(),
+            bot_id: bot_id.clone(),
+            heard: Arc::new(AtomicBool::new(false)),
+        });
 
         // Start playback of the streamed xAI audio (mono, 48kHz).
         let source = StreamSource { buf: playback_buf.clone(), done: done.clone() };
@@ -166,8 +176,15 @@ pub async fn join_voice(
         "Authorization",
         format!("Bearer {}", cfg.xai_api_key).parse().unwrap(),
     );
-    let (ws_stream, _) = tokio_tungstenite::connect_async(req).await
-        .map_err(|e| anyhow!("xAI realtime connect failed: {e}"))?;
+    let (ws_stream, _) = match tokio_tungstenite::connect_async(req).await {
+        Ok(s) => s,
+        Err(e) => {
+            log(&app, &bot_id, "error", format!("voice: xAI realtime connect failed: {e}"));
+            let _ = manager.remove(guild_id).await;
+            return Err(anyhow!("xAI realtime connect failed: {e}"));
+        }
+    };
+    log(&app, &bot_id, "info", "voice: connected to xAI realtime API");
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
     // Configure the session with the persona.
@@ -189,60 +206,92 @@ pub async fn join_voice(
             "tools": []
         }
     });
-    ws_write.send(WsMessage::Text(session_cfg.to_string())).await
-        .map_err(|e| anyhow!("session.update failed: {e}"))?;
-
-    let b64 = base64::engine::general_purpose::STANDARD;
+    if let Err(e) = ws_write.send(WsMessage::Text(session_cfg.to_string())).await {
+        log(&app, &bot_id, "error", format!("voice: session.update failed: {e}"));
+        let _ = manager.remove(guild_id).await;
+        return Err(anyhow!("session.update failed: {e}"));
+    }
+    log(&app, &bot_id, "info", format!("voice: session configured (voice='{}')", cfg.voice));
 
     // Task: forward Discord audio to xAI.
     let done_w = done.clone();
+    let app_w = app.clone();
+    let bot_w = bot_id.clone();
+    let sent = Arc::new(AtomicU64::new(0));
+    let sent_w = sent.clone();
     let writer = tokio::spawn(async move {
+        let b64 = base64::engine::general_purpose::STANDARD;
         while let Some(pcm) = in_rx.recv().await {
             if done_w.load(Ordering::Relaxed) { break; }
             let msg = serde_json::json!({
                 "type": "input_audio_buffer.append",
                 "audio": b64.encode(&pcm),
             });
-            if ws_write.send(WsMessage::Text(msg.to_string())).await.is_err() {
+            if let Err(e) = ws_write.send(WsMessage::Text(msg.to_string())).await {
+                log(&app_w, &bot_w, "error", format!("voice: failed sending audio to xAI: {e}"));
                 break;
             }
+            let n = sent_w.fetch_add(1, Ordering::Relaxed) + 1;
+            if n == 1 { log(&app_w, &bot_w, "info", "voice: streaming first audio to xAI"); }
+            else if n % 250 == 0 { log(&app_w, &bot_w, "info", format!("voice: sent {n} audio frames to xAI")); }
         }
         let _ = ws_write.close().await;
     });
 
-    // Task: read xAI output audio and push to playback buffer.
+    // Task: read xAI events, push output audio to playback buffer.
     let done_r = done.clone();
     let app_r = app.clone();
     let bot_r = bot_id.clone();
     let reader = tokio::spawn(async move {
         let b64 = base64::engine::general_purpose::STANDARD;
+        let mut got_audio = 0u64;
         while let Some(msg) = ws_read.next().await {
             if done_r.load(Ordering::Relaxed) { break; }
             let txt = match msg {
                 Ok(WsMessage::Text(t)) => t,
-                Ok(WsMessage::Close(_)) | Err(_) => break,
-                _ => continue,
+                Ok(WsMessage::Close(c)) => {
+                    log(&app_r, &bot_r, "error", format!("voice: xAI closed connection: {c:?}"));
+                    break;
+                }
+                Ok(_) => continue,
+                Err(e) => { log(&app_r, &bot_r, "error", format!("voice: xAI ws error: {e}")); break; }
             };
             let v: serde_json::Value = match serde_json::from_str(&txt) {
                 Ok(v) => v, Err(_) => continue,
             };
-            match v.get("type").and_then(|t| t.as_str()) {
-                Some("response.output_audio.delta") => {
-                    if let Some(a) = v.get("audio").and_then(|a| a.as_str()) {
+            let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            match ty {
+                // Accept both documented and OpenAI-compatible audio event names.
+                "response.output_audio.delta" | "response.audio.delta" => {
+                    if let Some(a) = v.get("audio").or_else(|| v.get("delta")).and_then(|a| a.as_str()) {
                         if let Ok(bytes) = b64.decode(a) {
+                            got_audio += 1;
+                            if got_audio == 1 { log(&app_r, &bot_r, "info", "voice: receiving audio from xAI (speaking)"); }
                             playback_buf.lock().extend(bytes);
                         }
                     }
                 }
-                Some("error") => {
-                    let _ = app_r.emit("bot-log", serde_json::json!({
-                        "bot_id": bot_r, "level": "error",
-                        "msg": format!("voice error: {}", v),
-                    }));
+                "session.created" | "session.updated" => {
+                    log(&app_r, &bot_r, "info", format!("voice: {ty}"));
+                }
+                "response.done" | "response.completed" => {
+                    got_audio = 0;
+                }
+                "error" => {
+                    log(&app_r, &bot_r, "error", format!("voice: xAI error event: {v}"));
+                }
+                other if !other.is_empty() => {
+                    // Surface anything unexpected so we can diagnose.
+                    if !other.starts_with("response.output_audio.")
+                        && !other.starts_with("input_audio_buffer.")
+                        && other != "response.output_text.delta" {
+                        log(&app_r, &bot_r, "info", format!("voice: event {other}"));
+                    }
                 }
                 _ => {}
             }
         }
+        log(&app_r, &bot_r, "info", "voice: xAI read loop ended");
     });
 
     sessions().lock().insert(guild_id.get(), VoiceSession {
@@ -250,10 +299,7 @@ pub async fn join_voice(
         done,
     });
 
-    let _ = app.emit("bot-log", serde_json::json!({
-        "bot_id": bot_id, "level": "info",
-        "msg": format!("joined voice channel {}", channel_id),
-    }));
+    log(&app, &bot_id, "info", format!("voice: bridge live in channel {channel_id}"));
     Ok(())
 }
 

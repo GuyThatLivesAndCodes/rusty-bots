@@ -292,6 +292,12 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
 
     let songbird_config = songbird::Config::default()
         .crypto_mode(songbird::driver::CryptoMode::Aes256Gcm)
+        .decode_mode(songbird::driver::DecodeMode::Decode(
+            songbird::driver::DecodeConfig::new(
+                songbird::driver::Channels::Mono,
+                songbird::driver::SampleRate::Hz48000,
+            ),
+        ))
         .gateway_timeout(Some(std::time::Duration::from_secs(20)))
         .driver_timeout(Some(std::time::Duration::from_secs(20)));
 
