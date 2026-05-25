@@ -3,6 +3,79 @@ use serde_json::{json, Value};
 use anyhow::{Result, anyhow};
 
 const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
+const VOICES_URL: &str = "https://api.x.ai/v1/tts/voices";
+const CUSTOM_VOICES_URL: &str = "https://api.x.ai/v1/custom-voices";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VoiceInfo {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+}
+
+/// Pull every voice id from a flexible JSON response. xAI may wrap the list in
+/// `voices`, `data`, `custom_voices`, `results`, or return a bare array.
+fn collect_voices(v: &Value, kind: &str, out: &mut Vec<VoiceInfo>) {
+    let arr = if let Some(a) = v.as_array() {
+        a.clone()
+    } else {
+        ["voices", "data", "custom_voices", "results", "items"]
+            .iter()
+            .find_map(|k| v.get(*k).and_then(|x| x.as_array()).cloned())
+            .unwrap_or_default()
+    };
+    for item in arr {
+        if let Some(s) = item.as_str() {
+            out.push(VoiceInfo { id: s.to_string(), label: s.to_string(), kind: kind.to_string() });
+            continue;
+        }
+        let id = ["voice_id", "id", "name"]
+            .iter()
+            .find_map(|k| item.get(*k).and_then(|x| x.as_str()))
+            .map(|s| s.to_string());
+        let Some(id) = id else { continue; };
+        let name = item.get("name").and_then(|x| x.as_str()).unwrap_or(&id);
+        let mut details = Vec::new();
+        for k in ["gender", "age", "tone", "language"] {
+            if let Some(d) = item.get(k).and_then(|x| x.as_str()) { details.push(d.to_string()); }
+        }
+        let label = if details.is_empty() {
+            format!("{name} ({id})")
+        } else {
+            format!("{name} — {} ({id})", details.join(", "))
+        };
+        out.push(VoiceInfo { id, label, kind: kind.to_string() });
+    }
+}
+
+pub async fn list_voices(api_key: &str) -> Result<Vec<VoiceInfo>> {
+    if api_key.is_empty() {
+        return Err(anyhow!("xAI API key not set"));
+    }
+    let client = reqwest::Client::new();
+    let mut out = Vec::new();
+    let mut last_err = None;
+    for (url, kind) in [(VOICES_URL, "built-in"), (CUSTOM_VOICES_URL, "custom")] {
+        match client.get(url).bearer_auth(api_key).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                if status.is_success() {
+                    if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                        collect_voices(&v, kind, &mut out);
+                    }
+                } else {
+                    last_err = Some(anyhow!("{} {}: {}", kind, status, text));
+                }
+            }
+            Err(e) => last_err = Some(anyhow!("{kind}: {e}")),
+        }
+    }
+    if out.is_empty() {
+        if let Some(e) = last_err { return Err(e); }
+    }
+    Ok(out)
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatMessage {

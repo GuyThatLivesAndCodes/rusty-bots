@@ -120,13 +120,8 @@ function openDashboard() {
 
   // Voice tab
   $("voice-enabled").checked = b.voice_enabled ?? true;
-  const wantVoice = b.voice || "eve";
-  if (![...$("voice-name").options].some((o) => o.value === wantVoice)) {
-    const opt = document.createElement("option");
-    opt.value = wantVoice; opt.textContent = wantVoice;
-    $("voice-name").appendChild(opt);
-  }
-  $("voice-name").value = wantVoice;
+  $("voice-name").value = b.voice || "eve";
+  loadVoices(b.xai_api_key);
 
   // Reset transient lists
   $("guild-list").innerHTML = "";
@@ -183,6 +178,27 @@ async function saveAISettings() {
   await refreshBots();
   openDashboard();
   switchTab("ai-tab");
+}
+
+async function loadVoices(apiKey) {
+  const key = (apiKey || "").trim();
+  const dl = $("voice-list");
+  const status = $("voice-list-status");
+  if (!key) { status.textContent = "Set an xAI API key (AI Settings) to load voices."; return; }
+  status.textContent = "Loading voices…";
+  try {
+    const voices = await invoke("list_voices", { apiKey: key });
+    dl.innerHTML = "";
+    for (const v of voices) {
+      const opt = document.createElement("option");
+      opt.value = v.id;
+      opt.label = `${v.label} [${v.kind}]`;
+      dl.appendChild(opt);
+    }
+    status.textContent = voices.length ? `${voices.length} voices available.` : "No voices returned.";
+  } catch (e) {
+    status.textContent = `Could not load voices: ${e}`;
+  }
 }
 
 async function saveVoiceSettings() {
@@ -344,6 +360,7 @@ $("member-search").oninput = refreshMembers;
 $("mm-close").onclick = () => $("member-modal").classList.add("hidden");
 $("ai-save-btn").onclick = saveAISettings;
 $("voice-save-btn").onclick = saveVoiceSettings;
+$("voice-refresh-btn").onclick = () => { const b = currentBot(); loadVoices(b?.xai_api_key); };
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.onclick = () => switchTab(btn.dataset.tab);
 });

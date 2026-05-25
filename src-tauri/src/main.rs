@@ -29,6 +29,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::list_bots,
             commands::save_bot,
+            commands::list_voices,
             commands::delete_bot,
             commands::start_bot_cmd,
             commands::stop_bot_cmd,

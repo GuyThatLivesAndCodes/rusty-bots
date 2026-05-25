@@ -51,3 +51,4 @@ button.danger { background: #d83c3e; }
 code { background: #0a0a0a; padding: 2px 6px; border-radius: 3px; }
 .hint { color: #888; font-size: 13px; margin-top: 12px; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.secondary { background: #2a2a33; }

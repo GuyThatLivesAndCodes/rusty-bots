@@ -68,6 +68,11 @@ pub fn save_bot(state: State<'_, AppState>, input: UpsertBotInput) -> Result<Bot
 }
 
 #[tauri::command]
+pub async fn list_voices(api_key: String) -> Result<Vec<crate::ai::VoiceInfo>, String> {
+    crate::ai::list_voices(&api_key).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn delete_bot(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state.registry.stop(&id).await.map_err(|e| e.to_string())?;
     state.store.remove(&id).map_err(|e| e.to_string())?;
