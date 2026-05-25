@@ -119,8 +119,29 @@ pub async fn join_voice(
     let manager = songbird::get(ctx).await
         .ok_or_else(|| anyhow!("songbird not initialized"))?;
 
-    let call_lock = manager.join(guild_id, channel_id).await
-        .map_err(|e| anyhow!("join failed: {e}"))?;
+    // If a previous attempt left the bot half-connected, Discord thinks it is
+    // still in the channel and every retry times out. Always clear any stale
+    // connection on this guild before joining.
+    let _ = manager.remove(guild_id).await;
+
+    let call_lock = match manager.join(guild_id, channel_id).await {
+        Ok(c) => c,
+        Err(e) => {
+            // songbird hides the real cause behind "establishing connection
+            // failed"; surface the inner ConnectionError, and clean up so the
+            // bot does not get stuck in the channel.
+            let detail = match &e {
+                songbird::error::JoinError::Driver(inner) => format!("{inner:?}"),
+                other => format!("{other}"),
+            };
+            let _ = manager.remove(guild_id).await;
+            let _ = app.emit("bot-log", serde_json::json!({
+                "bot_id": bot_id, "level": "error",
+                "msg": format!("voice join failed: {detail}"),
+            }));
+            return Err(anyhow!("join failed: {detail}"));
+        }
+    };
 
     let done = Arc::new(AtomicBool::new(false));
     let playback_buf: Arc<Mutex<VecDeque<u8>>> = Arc::new(Mutex::new(VecDeque::new()));

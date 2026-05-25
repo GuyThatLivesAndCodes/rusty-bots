@@ -290,9 +290,14 @@ pub async fn start_bot(registry: Arc<BotRegistry>, app: AppHandle, cfg: BotConfi
         app: app.clone(),
     };
 
+    let songbird_config = songbird::Config::default()
+        .crypto_mode(songbird::driver::CryptoMode::Aes256Gcm)
+        .gateway_timeout(Some(std::time::Duration::from_secs(20)))
+        .driver_timeout(Some(std::time::Duration::from_secs(20)));
+
     let mut client = Client::builder(&cfg.token, intents)
         .event_handler(Handler { state: runtime_state })
-        .register_songbird()
+        .register_songbird_from_config(songbird_config)
         .await?;
 
     let shard_manager = client.shard_manager.clone();
