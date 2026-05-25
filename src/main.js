@@ -118,6 +118,11 @@ function openDashboard() {
   $("ai-enabled").checked = b.ai_enabled ?? true;
   $("ai-persona").value = b.persona || "";
 
+  // Voice tab
+  $("voice-enabled").checked = b.voice_enabled ?? true;
+  $("voice-name").value = b.voice || "eve";
+  loadVoices(b.xai_api_key);
+
   // Reset transient lists
   $("guild-list").innerHTML = "";
   $("member-list").innerHTML = "";
@@ -173,6 +178,44 @@ async function saveAISettings() {
   await refreshBots();
   openDashboard();
   switchTab("ai-tab");
+}
+
+async function loadVoices(apiKey) {
+  const key = (apiKey || "").trim();
+  const dl = $("voice-list");
+  const status = $("voice-list-status");
+  if (!key) { status.textContent = "Set an xAI API key (AI Settings) to load voices."; return; }
+  status.textContent = "Loading voices…";
+  try {
+    const voices = await invoke("list_voices", { apiKey: key });
+    dl.innerHTML = "";
+    for (const v of voices) {
+      const opt = document.createElement("option");
+      opt.value = v.id;
+      opt.label = `${v.label} [${v.kind}]`;
+      dl.appendChild(opt);
+    }
+    status.textContent = voices.length ? `${voices.length} voices available.` : "No voices returned.";
+  } catch (e) {
+    status.textContent = `Could not load voices: ${e}`;
+  }
+}
+
+async function saveVoiceSettings() {
+  if (state.selected === "__new__") { alert("Save the bot in Settings tab first."); return; }
+  const b = currentBot();
+  if (!b) return;
+  const input = {
+    id: state.selected,
+    name: b.name,
+    token: b.token,
+    voice_enabled: $("voice-enabled").checked,
+    voice: $("voice-name").value,
+  };
+  await invoke("save_bot", { input });
+  await refreshBots();
+  openDashboard();
+  switchTab("voice-tab");
 }
 
 async function deleteBot() {
@@ -316,6 +359,8 @@ $("refresh-members").onclick = refreshMembers;
 $("member-search").oninput = refreshMembers;
 $("mm-close").onclick = () => $("member-modal").classList.add("hidden");
 $("ai-save-btn").onclick = saveAISettings;
+$("voice-save-btn").onclick = saveVoiceSettings;
+$("voice-refresh-btn").onclick = () => { const b = currentBot(); loadVoices(b?.xai_api_key); };
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.onclick = () => switchTab(btn.dataset.tab);
 });

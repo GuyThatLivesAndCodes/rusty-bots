@@ -37,6 +37,8 @@ pub struct UpsertBotInput {
     pub persona: Option<String>,
     pub ai_enabled: Option<bool>,
     pub history_size: Option<usize>,
+    pub voice_enabled: Option<bool>,
+    pub voice: Option<String>,
 }
 
 #[tauri::command]
@@ -52,6 +54,8 @@ pub fn save_bot(state: State<'_, AppState>, input: UpsertBotInput) -> Result<Bot
         persona: input.persona.unwrap_or_else(|| existing.as_ref().map(|e| e.persona.clone()).unwrap_or_default()),
         ai_enabled: input.ai_enabled.unwrap_or_else(|| existing.as_ref().map(|e| e.ai_enabled).unwrap_or(true)),
         history_size: input.history_size.unwrap_or_else(|| existing.as_ref().map(|e| e.history_size).unwrap_or(10)),
+        voice_enabled: input.voice_enabled.unwrap_or_else(|| existing.as_ref().map(|e| e.voice_enabled).unwrap_or(true)),
+        voice: input.voice.unwrap_or_else(|| existing.as_ref().map(|e| e.voice.clone()).unwrap_or_else(|| "eve".to_string())),
     };
     state.store.upsert(cfg.clone()).map_err(|e| e.to_string())?;
 
@@ -61,6 +65,11 @@ pub fn save_bot(state: State<'_, AppState>, input: UpsertBotInput) -> Result<Bot
     }
 
     Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn list_voices(api_key: String) -> Result<Vec<crate::ai::VoiceInfo>, String> {
+    crate::ai::list_voices(&api_key).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

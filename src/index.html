@@ -29,6 +29,7 @@
         <button class="tab-btn" data-tab="servers-tab">Servers</button>
         <button class="tab-btn" data-tab="members-tab">Members</button>
         <button class="tab-btn" data-tab="ai-tab">AI Settings</button>
+        <button class="tab-btn" data-tab="voice-tab">Voice</button>
         <button class="tab-btn" data-tab="console-tab">Console</button>
         <button class="tab-btn" data-tab="settings-tab">Settings</button>
       </nav>
@@ -88,6 +89,24 @@
         </label>
         <div class="row">
           <button id="ai-save-btn">Save AI Settings</button>
+        </div>
+      </div>
+
+      <div id="voice-tab" class="tab-content hidden">
+        <h3>Voice (AI in Calls)</h3>
+        <p class="hint">When enabled, the bot can join voice channels — either via the <code>/aijoinvc</code> command or when the AI decides to. It listens to everyone in the call and replies live using xAI's realtime voice. It auto-leaves when the channel is empty.</p>
+        <label><input id="voice-enabled" type="checkbox" /> Voice enabled</label>
+        <label>AI Voice (built-in or custom voice ID)
+          <input id="voice-name" list="voice-list" placeholder="e.g. eve, or a custom voice id" autocomplete="off" />
+          <datalist id="voice-list"></datalist>
+        </label>
+        <div class="row">
+          <button id="voice-refresh-btn" class="secondary">Refresh voice list</button>
+          <span class="hint" id="voice-list-status"></span>
+        </div>
+        <p class="hint">Pick from your xAI built-in and custom (cloned) voices, or paste any voice ID. The list is fetched live using this bot's xAI API key. The AI uses the same Persona prompt (from the AI Settings tab) in calls.</p>
+        <div class="row">
+          <button id="voice-save-btn">Save Voice Settings</button>
         </div>
       </div>
 
