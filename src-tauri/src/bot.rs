@@ -101,6 +101,10 @@ impl EventHandler for Handler {
             .and_then(|o| o.value.as_channel_id());
         let Some(channel_id) = channel_id else { return; };
 
+        let _ = self.state.app.emit("bot-log", serde_json::json!({
+            "bot_id": bot_id, "level": "info",
+            "msg": format!("/aijoinvc invoked for channel {channel_id}"),
+        }));
         let _ = cmd.create_response(&ctx.http, CreateInteractionResponse::Message(
             CreateInteractionResponseMessage::new().content(format!("Joining <#{}>…", channel_id)))).await;
 

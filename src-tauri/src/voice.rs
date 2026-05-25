@@ -39,8 +39,11 @@ pub fn is_in_voice(guild_id: u64) -> bool {
 }
 
 fn log(app: &AppHandle, bot_id: &str, level: &str, msg: impl Into<String>) {
+    let msg = msg.into();
+    eprintln!("[voice][{bot_id}][{level}] {msg}");
+    tracing::info!(target: "voice", bot_id, level, "{msg}");
     let _ = app.emit("bot-log", serde_json::json!({
-        "bot_id": bot_id, "level": level, "msg": msg.into(),
+        "bot_id": bot_id, "level": level, "msg": msg,
     }));
 }
 
@@ -113,23 +116,34 @@ pub async fn join_voice(
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> Result<()> {
+    log(&app, &bot_id, "info", format!("voice: join requested for channel {channel_id}"));
     if !cfg.voice_enabled {
+        log(&app, &bot_id, "error", "voice: disabled for this bot");
         return Err(anyhow!("voice is disabled for this bot"));
     }
     if cfg.xai_api_key.is_empty() {
+        log(&app, &bot_id, "error", "voice: xAI API key required");
         return Err(anyhow!("xAI API key required for voice"));
     }
-    let manager = songbird::get(ctx).await
-        .ok_or_else(|| anyhow!("songbird not initialized"))?;
+    let manager = match songbird::get(ctx).await {
+        Some(m) => m,
+        None => {
+            log(&app, &bot_id, "error", "voice: songbird not initialized");
+            return Err(anyhow!("songbird not initialized"));
+        }
+    };
 
     // If a previous attempt left the bot half-connected, Discord thinks it is
     // still in the channel and every retry times out. Always clear any stale
     // connection on this guild before joining.
     let _ = manager.remove(guild_id).await;
 
-    let call_lock = match manager.join(guild_id, channel_id).await {
-        Ok(c) => c,
-        Err(e) => {
+    log(&app, &bot_id, "info", "voice: connecting to Discord voice (DAVE handshake)…");
+    let join_fut = manager.join(guild_id, channel_id);
+    let joined = tokio::time::timeout(std::time::Duration::from_secs(25), join_fut).await;
+    let call_lock = match joined {
+        Ok(Ok(c)) => c,
+        Ok(Err(e)) => {
             // songbird hides the real cause behind "establishing connection
             // failed"; surface the inner ConnectionError, and clean up so the
             // bot does not get stuck in the channel.
@@ -138,11 +152,13 @@ pub async fn join_voice(
                 other => format!("{other}"),
             };
             let _ = manager.remove(guild_id).await;
-            let _ = app.emit("bot-log", serde_json::json!({
-                "bot_id": bot_id, "level": "error",
-                "msg": format!("voice join failed: {detail}"),
-            }));
+            log(&app, &bot_id, "error", format!("voice join failed: {detail}"));
             return Err(anyhow!("join failed: {detail}"));
+        }
+        Err(_) => {
+            let _ = manager.remove(guild_id).await;
+            log(&app, &bot_id, "error", "voice: join timed out after 25s (no Discord voice connection)");
+            return Err(anyhow!("join timed out"));
         }
     };
 
