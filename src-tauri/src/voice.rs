@@ -59,13 +59,17 @@ impl Read for StreamSource {
         if self.done.load(Ordering::Relaxed) {
             return Ok(0);
         }
+        // RawAdapter consumes f32 little-endian samples, so every read must stay
+        // aligned to 4-byte boundaries or the whole stream desyncs into noise.
+        let cap = out.len() & !3;
+        if cap == 0 { return Ok(0); }
         let mut b = self.buf.lock();
         if b.is_empty() {
-            // Emit silence to keep the live track running.
-            for x in out.iter_mut() { *x = 0; }
-            return Ok(out.len());
+            // Emit silence (f32 0.0 == 4 zero bytes) to keep the live track running.
+            for x in out[..cap].iter_mut() { *x = 0; }
+            return Ok(cap);
         }
-        let n = out.len().min(b.len());
+        let n = cap.min(b.len());
         for slot in out.iter_mut().take(n) { *slot = b.pop_front().unwrap(); }
         Ok(n)
     }
@@ -211,9 +215,9 @@ pub async fn join_voice(
             "instructions": cfg.persona,
             "turn_detection": {
                 "type": "server_vad",
-                "threshold": 0.85,
-                "silence_duration_ms": 500,
-                "prefix_padding_ms": 333
+                "threshold": 0.5,
+                "silence_duration_ms": 200,
+                "prefix_padding_ms": 200
             },
             "audio": {
                 "input":  { "format": { "type": "audio/pcm", "rate": 48000 } },
@@ -283,7 +287,15 @@ pub async fn join_voice(
                         if let Ok(bytes) = b64.decode(a) {
                             got_audio += 1;
                             if got_audio == 1 { log(&app_r, &bot_r, "info", "voice: receiving audio from xAI (speaking)"); }
-                            playback_buf.lock().extend(bytes);
+                            // xAI sends s16le PCM; RawAdapter wants f32le. Convert.
+                            let mut f = Vec::with_capacity(bytes.len() * 2);
+                            let mut i = 0;
+                            while i + 1 < bytes.len() {
+                                let s = i16::from_le_bytes([bytes[i], bytes[i + 1]]) as f32 / 32768.0;
+                                f.extend_from_slice(&s.to_le_bytes());
+                                i += 2;
+                            }
+                            playback_buf.lock().extend(f);
                         }
                     }
                 }
@@ -295,14 +307,6 @@ pub async fn join_voice(
                 }
                 "error" => {
                     log(&app_r, &bot_r, "error", format!("voice: xAI error event: {v}"));
-                }
-                other if !other.is_empty() => {
-                    // Surface anything unexpected so we can diagnose.
-                    if !other.starts_with("response.output_audio.")
-                        && !other.starts_with("input_audio_buffer.")
-                        && other != "response.output_text.delta" {
-                        log(&app_r, &bot_r, "info", format!("voice: event {other}"));
-                    }
                 }
                 _ => {}
             }
